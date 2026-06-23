@@ -12,6 +12,7 @@ export default defineConfig({
         portal: resolve(__dirname, "index.html"),
         "tic-tac-toe": resolve(__dirname, "games/tic-tac-toe/index.html"),
         poker: resolve(__dirname, "games/poker/index.html"),
+        "sheng-ji": resolve(__dirname, "games/sheng-ji/index.html"),
       },
     },
   },

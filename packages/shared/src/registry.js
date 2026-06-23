@@ -16,4 +16,11 @@ export const games = [
     emoji: "🃏",
     path: "/games/poker/",
   },
+  {
+    id: "sheng-ji",
+    title: "Sheng Ji (升级)",
+    description: "4-player online trick-taking card game. Multiplayer — open in four browser tabs.",
+    emoji: "🀄",
+    path: "/games/sheng-ji/",
+  },
 ];

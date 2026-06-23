@@ -1,0 +1,9 @@
+{
+  "name": "@portal/game-sheng-ji",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@portal/shared": "*"
+  }
+}

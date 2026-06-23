@@ -15,6 +15,12 @@ export default defineConfig({
       reuseExistingServer: false,
     },
     {
+      command: "node packages/sheng-ji-server/src/server.js",
+      port: 3002,
+      timeout: 10_000,
+      reuseExistingServer: false,
+    },
+    {
       command: "npx vite --port 5173",
       port: 5173,
       timeout: 30_000,
