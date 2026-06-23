@@ -9,4 +9,11 @@ export const games = [
     emoji: "⭕",
     path: "/games/tic-tac-toe/",
   },
+  {
+    id: "poker",
+    title: "Texas Hold'em",
+    description: "4-player online poker. Multiplayer — open in four browser tabs.",
+    emoji: "🃏",
+    path: "/games/poker/",
+  },
 ];
