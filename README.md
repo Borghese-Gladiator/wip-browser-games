@@ -1,38 +1,71 @@
-# Tic-Tac-Toe
+# Browser Games
 
-A two-player tic-tac-toe game that runs entirely in the browser. It is a
-zero-dependency static web app — one HTML file and one JavaScript file, no
-framework and no build step. Players click cells on a 3×3 grid to place X and O
-alternately; the game announces the winner or a draw and offers a reset.
+A small gaming portal: a landing page that lists games, with each game living in
+its own page. Built as an npm-workspaces monorepo using Vite + React.
 
-## Build / install
-
-No build step and no dependencies. There is nothing to install — the app is
-plain HTML, CSS, and JavaScript served as-is.
-
-## Run (dev)
-
-Open `index.html` directly in a browser, or serve the directory with any static
-file server, e.g.:
-
-```
-python3 -m http.server 8000
-```
-
-Then visit http://localhost:8000/. There is no separate dev/watch mode.
-
-## Run (prod)
-
-There is no separate production build or server. Serve the same static files
-from any web server / static host (the directory contains everything needed).
-The `python3 -m http.server` command above works equally well for a local
-production-style serve.
-
-## File hierarchy
+## Layout
 
 ```
 .
-├── index.html   # Page markup, styles, and the board container; loads game.js
-├── game.js      # Game logic: board state, move handling, win/draw detection, reset
-└── README.md    # This file
+├── index.html              # Portal entry (root page)
+├── vite.config.js          # Multi-page build: portal + one entry per game
+├── package.json            # Workspaces root + scripts
+├── packages/
+│   └── shared/             # @portal/shared
+│       └── src/
+│           ├── registry.js # Hand-maintained list of games
+│           └── theme.css   # Shared design tokens
+├── portal/                 # @portal/app — the landing page (React)
+│   └── src/
+│       ├── main.jsx
+│       ├── Portal.jsx      # Renders a card per registry entry
+│       └── portal.css
+└── games/
+    └── tic-tac-toe/        # @portal/game-tic-tac-toe
+        ├── index.html      # Game page entry (/games/tic-tac-toe/)
+        └── src/
+            ├── main.jsx
+            ├── TicTacToe.jsx
+            ├── ttt.js       # Pure game logic (unit-tested)
+            └── ttt.test.js
 ```
+
+## Install
+
+```
+npm install
+```
+
+## Run (dev)
+
+```
+npm run dev
+```
+
+Open the printed URL for the portal; click a game card to navigate to it.
+
+## Build / preview (prod)
+
+```
+npm run build
+npm run preview
+```
+
+## Test
+
+```
+npm test
+```
+
+Unit tests cover the pure game logic (e.g. `games/tic-tac-toe/src/ttt.js`).
+
+## Adding a game
+
+1. Create `games/<id>/` with an `index.html` and a `src/main.jsx` entry (use
+   `games/tic-tac-toe/` as a template).
+2. Add an entry to `packages/shared/src/registry.js` (`id`, `title`,
+   `description`, `emoji`, `path`).
+3. Add the game's `index.html` to the `input` map in `vite.config.js`.
+
+Shared theme tokens live in `@portal/shared/theme.css`; import it from each
+game's entry to stay visually consistent.

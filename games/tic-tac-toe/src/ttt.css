@@ -1,0 +1,68 @@
+.ttt {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  position: relative;
+}
+
+.ttt-back {
+  position: absolute;
+  top: 1.5rem;
+  left: 1.5rem;
+  margin: 0;
+  font-weight: 600;
+}
+
+.ttt h1 {
+  margin: 0;
+  font-size: 2rem;
+  letter-spacing: 0.05em;
+}
+
+.ttt-status {
+  margin: 0;
+  font-size: 1.25rem;
+  min-height: 1.5em;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.ttt-board {
+  display: grid;
+  grid-template-columns: repeat(3, 5rem);
+  grid-template-rows: repeat(3, 5rem);
+  gap: 6px;
+  background: var(--line);
+  padding: 6px;
+  border-radius: 8px;
+}
+
+.ttt-cell {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--text);
+  background: var(--cell);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.ttt-cell:hover:not(:disabled) {
+  background: var(--cell-hover);
+}
+
+.ttt-cell:disabled {
+  cursor: default;
+}
+
+.ttt-cell:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
