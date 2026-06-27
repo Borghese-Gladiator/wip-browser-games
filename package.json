@@ -5,11 +5,13 @@
   "type": "module",
   "workspaces": [
     "packages/*",
+    "packages/engines/*",
     "portal",
     "games/*"
   ],
   "scripts": {
     "dev": "vite",
+    "server": "node bin/dev-server.js",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",

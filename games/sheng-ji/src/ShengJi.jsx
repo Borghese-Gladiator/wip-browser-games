@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-
-const WS_URL = import.meta.env.VITE_SJ_WS_URL || "ws://localhost:3002";
+import { useGameSocket } from "@browser-games/game-client/useGameSocket";
+import { Lobby } from "@browser-games/game-client/Lobby";
 
 const SUIT_NAMES = { S: "Spades", H: "Hearts", D: "Diamonds", C: "Clubs" };
 const SUIT_SYMBOLS = { S: "♠", H: "♥", D: "♦", C: "♣" };
@@ -24,67 +23,28 @@ function teamLabel(team) {
 }
 
 export function ShengJi() {
-  const [name, setName] = useState("");
-  const [joined, setJoined] = useState(false);
-  const [gameState, setGameState] = useState(null);
-  const [error, setError] = useState("");
-  const ws = useRef(null);
+  const {
+    rooms,
+    room,
+    gameState,
+    error,
+    listRooms,
+    createRoom,
+    joinRoom,
+    send,
+    restart,
+  } = useGameSocket("sheng-ji");
 
-  useEffect(() => {
-    const socket = new WebSocket(WS_URL);
-    ws.current = socket;
-    socket.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.type === "error") {
-        setError(msg.message);
-      } else {
-        setError("");
-        setGameState(msg);
-      }
-    };
-    return () => socket.close();
-  }, []);
-
-  function handleJoin(e) {
-    e.preventDefault();
-    ws.current?.send(JSON.stringify({ type: "join", name }));
-    setJoined(true);
-  }
-
-  function sendPlayCard(cardId) {
-    ws.current?.send(JSON.stringify({ type: "playCard", cardId }));
-  }
-
-  function sendNewDeal() {
-    ws.current?.send(JSON.stringify({ type: "newDeal" }));
-  }
-
-  if (!joined || !gameState) {
+  if (!room || !gameState) {
     return (
-      <main className="sj">
-        <p className="sj-back">
-          <a href="/">← All games</a>
-        </p>
-        <h1>Sheng Ji (升级)</h1>
-        <form className="sj-join" onSubmit={handleJoin}>
-          <label htmlFor="player-name">Your name</label>
-          <input
-            id="player-name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-          <button className="btn" type="submit">
-            Join Table
-          </button>
-        </form>
-        {error && (
-          <p className="sj-error" role="alert">
-            {error}
-          </p>
-        )}
-      </main>
+      <Lobby
+        title="Sheng Ji (升级)"
+        rooms={rooms}
+        error={error}
+        onCreate={createRoom}
+        onJoin={joinRoom}
+        onRefresh={listRooms}
+      />
     );
   }
 
@@ -105,6 +65,7 @@ export function ShengJi() {
     legalCards,
   } = gameState;
 
+  const playCard = (cardId) => send({ cardId });
   const nameForSeat = (seat) => players.find((p) => p.seat === seat)?.name ?? `Seat ${seat}`;
   const legalSet = new Set(legalCards ?? []);
 
@@ -125,6 +86,7 @@ export function ShengJi() {
         <a href="/">← All games</a>
       </p>
       <h1>Sheng Ji (升级)</h1>
+      <p className="sj-room">Room: {room.code}</p>
 
       <section aria-label="Status">
         <p role="status" aria-live="polite">
@@ -175,7 +137,7 @@ export function ShengJi() {
                 className="sj-card-btn"
                 aria-label={`Play ${cardDisplayName(card)}`}
                 disabled={!legalSet.has(card)}
-                onClick={() => sendPlayCard(card)}
+                onClick={() => playCard(card)}
               >
                 {cardShort(card)}
               </button>
@@ -196,7 +158,7 @@ export function ShengJi() {
       </section>
 
       {phase === "deal-over" && (
-        <button className="btn" type="button" onClick={sendNewDeal}>
+        <button className="btn" type="button" onClick={restart}>
           New Deal
         </button>
       )}

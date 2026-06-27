@@ -24,10 +24,19 @@ test("4-player Texas Hold'em plays a full hand to showdown", async ({ browser })
     pages.map((p) => p.goto("http://localhost:5173/games/poker/")),
   );
 
-  // Each player joins by name.
-  for (const [i, page] of pages.entries()) {
-    await page.getByLabel("Your name").fill(`Player${i + 1}`);
-    await page.getByRole("button", { name: "Join Table" }).click();
+  // Player 1 creates a room; the rest join it by its code.
+  const [host, ...guests] = pages;
+  await host.getByLabel("Your name").fill("Player1");
+  await host.getByRole("button", { name: "Create room" }).click();
+
+  // The host's view shows "Room: <CODE>" once seated; share it with guests.
+  const roomText = await host.getByText(/^Room: /).textContent();
+  const code = roomText.replace("Room:", "").trim();
+
+  for (const [i, page] of guests.entries()) {
+    await page.getByLabel("Your name").fill(`Player${i + 2}`);
+    await page.getByLabel("Room code").fill(code);
+    await page.getByRole("button", { name: "Join by code" }).click();
   }
 
   // Server auto-starts the hand once all 4 are seated — wait for hole cards.

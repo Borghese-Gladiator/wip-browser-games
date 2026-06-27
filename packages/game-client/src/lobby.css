@@ -1,0 +1,46 @@
+/* Shared lobby styling for all multiplayer games. */
+.lobby {
+  max-width: 32rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.lobby-back {
+  margin-bottom: 1rem;
+}
+
+.lobby-name,
+.lobby-join {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.lobby-name label,
+.lobby-join label {
+  display: block;
+  width: 100%;
+  margin-bottom: 0.25rem;
+}
+
+.lobby-name input,
+.lobby-join input {
+  flex: 1;
+  min-width: 8rem;
+  padding: 0.5rem;
+}
+
+.lobby-rooms ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.lobby-error {
+  color: var(--danger, #c0392b);
+  margin-top: 1rem;
+}

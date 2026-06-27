@@ -1,71 +1,33 @@
-import { useEffect, useRef, useState } from "react";
-
-const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:3001";
+import { useGameSocket } from "@browser-games/game-client/useGameSocket";
+import { Lobby } from "@browser-games/game-client/Lobby";
 
 export function Poker() {
-  const [name, setName] = useState("");
-  const [joined, setJoined] = useState(false);
-  const [gameState, setGameState] = useState(null);
-  const [error, setError] = useState("");
-  const ws = useRef(null);
+  const {
+    rooms,
+    room,
+    gameState,
+    error,
+    listRooms,
+    createRoom,
+    joinRoom,
+    send,
+    restart,
+  } = useGameSocket("poker");
 
-  useEffect(() => {
-    const socket = new WebSocket(WS_URL);
-    ws.current = socket;
-    socket.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.type === "error") {
-        setError(msg.message);
-      } else {
-        setError("");
-        setGameState(msg);
-      }
-    };
-    return () => socket.close();
-  }, []);
-
-  function handleJoin(e) {
-    e.preventDefault();
-    ws.current?.send(JSON.stringify({ type: "join", name }));
-    setJoined(true);
-  }
-
-  function send(type, extra = {}) {
-    ws.current?.send(JSON.stringify({ type: "action", action: { type, ...extra } }));
-  }
-
-  function sendNewHand() {
-    ws.current?.send(JSON.stringify({ type: "newHand" }));
-  }
-
-  if (!joined || !gameState) {
+  if (!room || !gameState) {
     return (
-      <main className="poker">
-        <p className="poker-back">
-          <a href="/">← All games</a>
-        </p>
-        <h1>Texas Hold'em</h1>
-        <form className="poker-join" onSubmit={handleJoin}>
-          <label htmlFor="player-name">Your name</label>
-          <input
-            id="player-name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-          <button className="btn" type="submit">
-            Join Table
-          </button>
-        </form>
-        {error && (
-          <p role="alert" className="poker-error">
-            {error}
-          </p>
-        )}
-      </main>
+      <Lobby
+        title="Texas Hold'em"
+        rooms={rooms}
+        error={error}
+        onCreate={createRoom}
+        onJoin={joinRoom}
+        onRefresh={listRooms}
+      />
     );
   }
+
+  const act = (type, extra = {}) => send({ action: { type, ...extra } });
 
   const activePlayer = gameState.players.find((p) => p.seat === gameState.activeSeat);
   const activePlayerName = activePlayer?.name ?? "";
@@ -86,6 +48,7 @@ export function Poker() {
         <a href="/">← All games</a>
       </p>
       <h1>Texas Hold'em</h1>
+      <p className="poker-room">Room: {room.code}</p>
 
       <p id="status" role="status" aria-live="polite" className="poker-status">
         {statusText}
@@ -137,7 +100,7 @@ export function Poker() {
           <button
             className="btn"
             type="button"
-            onClick={() => send("fold")}
+            onClick={() => act("fold")}
             disabled={!legalActions.includes("fold")}
           >
             Fold
@@ -145,7 +108,7 @@ export function Poker() {
           <button
             className="btn"
             type="button"
-            onClick={() => send("check")}
+            onClick={() => act("check")}
             disabled={!legalActions.includes("check")}
           >
             Check
@@ -153,7 +116,7 @@ export function Poker() {
           <button
             className="btn"
             type="button"
-            onClick={() => send("call")}
+            onClick={() => act("call")}
             disabled={!legalActions.includes("call")}
           >
             Call
@@ -161,7 +124,7 @@ export function Poker() {
           <button
             className="btn"
             type="button"
-            onClick={() => send("raise")}
+            onClick={() => act("raise")}
             disabled={!legalActions.includes("raise")}
           >
             Raise
@@ -170,7 +133,7 @@ export function Poker() {
       )}
 
       {gameState.phase === "showdown" && (
-        <button className="btn" type="button" onClick={sendNewHand}>
+        <button className="btn" type="button" onClick={restart}>
           Play again
         </button>
       )}

@@ -18,9 +18,18 @@ test("4-player Sheng Ji plays a full deal", async ({ browser }) => {
   const pages = await Promise.all(contexts.map((ctx) => ctx.newPage()));
   await Promise.all(pages.map((p) => p.goto("http://localhost:5173/games/sheng-ji/")));
 
-  for (const [i, page] of pages.entries()) {
-    await page.getByLabel("Your name").fill(`Player${i + 1}`);
-    await page.getByRole("button", { name: "Join Table" }).click();
+  // Player 1 creates a room; the rest join it by its code.
+  const [host, ...guests] = pages;
+  await host.getByLabel("Your name").fill("Player1");
+  await host.getByRole("button", { name: "Create room" }).click();
+
+  const roomText = await host.getByText(/^Room: /).textContent();
+  const code = roomText.replace("Room:", "").trim();
+
+  for (const [i, page] of guests.entries()) {
+    await page.getByLabel("Your name").fill(`Player${i + 2}`);
+    await page.getByLabel("Room code").fill(code);
+    await page.getByRole("button", { name: "Join by code" }).click();
   }
 
   // Wait for hands to be dealt — each page shows the "Your hand" region.

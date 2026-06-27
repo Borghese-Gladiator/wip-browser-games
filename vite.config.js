@@ -1,19 +1,21 @@
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { games } from "./packages/shared/src/registry.js";
 
-// Multi-page build: the portal lives at the root, and each game is its own
-// page under /games/<id>/. Add a new entry here when you add a new game.
+// Multi-page build. The portal lives at the root; each game is its own page
+// under /games/<id>/. Inputs are derived from the shared registry so adding a
+// game requires only a registry entry — no edit here.
+const input = {
+  portal: resolve(__dirname, "index.html"),
+  ...Object.fromEntries(
+    games.map((g) => [g.id, resolve(__dirname, `games/${g.id}/index.html`)]),
+  ),
+};
+
 export default defineConfig({
   plugins: [react()],
   build: {
-    rollupOptions: {
-      input: {
-        portal: resolve(__dirname, "index.html"),
-        "tic-tac-toe": resolve(__dirname, "games/tic-tac-toe/index.html"),
-        poker: resolve(__dirname, "games/poker/index.html"),
-        "sheng-ji": resolve(__dirname, "games/sheng-ji/index.html"),
-      },
-    },
+    rollupOptions: { input },
   },
 });

@@ -1,0 +1,14 @@
+{
+  "name": "@browser-games/game-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./useGameSocket": "./src/useGameSocket.js",
+    "./Lobby": "./src/Lobby.jsx",
+    "./lobby.css": "./src/lobby.css"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1"
+  }
+}
