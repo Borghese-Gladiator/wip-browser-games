@@ -13,8 +13,8 @@ export function useGameSocket(gameId) {
   const { playerId } = useIdentity();
   const [connected, setConnected] = useState(false);
   const [rooms, setRooms] = useState([]);
-  const [room, setRoom] = useState(null); // { code, seat } once joined
-  const [gameState, setGameState] = useState(null);
+  const [room, setRoom] = useState(null); // { code, seat, isHost, options } once joined
+  const [gameState, setGameState] = useState(null); // includes presence, isHost
   const [error, setError] = useState("");
   const ws = useRef(null);
 
@@ -31,11 +31,16 @@ export function useGameSocket(gameId) {
           break;
         case "joined":
           setError("");
-          setRoom({ code: msg.code, seat: msg.seat });
+          setRoom({ code: msg.code, seat: msg.seat, isHost: msg.isHost, options: msg.options });
           break;
         case "state":
           setError("");
           setGameState(msg);
+          break;
+        case "ping":
+          // The one heartbeat the server drives; reply so it can measure latency
+          // and know we're alive (so our seat isn't reaped / auto-folded).
+          socket.send(JSON.stringify({ t: "pong", sentAt: msg.sentAt }));
           break;
         case "error":
           setError(msg.message);
@@ -54,13 +59,28 @@ export function useGameSocket(gameId) {
     [rawSend, gameId],
   );
   const createRoom = useCallback(
-    (name) => rawSend({ t: "lobby:create", gameId, name }),
+    (name, options) => rawSend({ t: "lobby:create", gameId, name, options }),
     [rawSend, gameId],
   );
   const joinRoom = useCallback(
     (code, name) => rawSend({ t: "lobby:join", gameId, code, name }),
     [rawSend, gameId],
   );
+  // Quick-match: drop into any open room or create one, filling with bots so a
+  // quiet lobby is still playable.
+  const quickMatch = useCallback(
+    (name, options) => rawSend({ t: "lobby:quickmatch", gameId, name, options }),
+    [rawSend, gameId],
+  );
+  const spectate = useCallback(
+    (code) => rawSend({ t: "lobby:spectate", gameId, code }),
+    [rawSend, gameId],
+  );
+
+  // Host controls (no-ops server-side unless this player is the host).
+  const kick = useCallback((targetId) => rawSend({ t: "host:kick", targetId }), [rawSend]);
+  const lockRoom = useCallback((locked) => rawSend({ t: "host:lock", locked }), [rawSend]);
+  const startEarly = useCallback(() => rawSend({ t: "host:start" }), [rawSend]);
 
   // In-room game message (engine payload), e.g. { action: {...} } or { cardId }.
   const send = useCallback((payload) => rawSend({ t: "game", ...payload }), [rawSend]);
@@ -75,6 +95,11 @@ export function useGameSocket(gameId) {
     listRooms,
     createRoom,
     joinRoom,
+    quickMatch,
+    spectate,
+    kick,
+    lockRoom,
+    startEarly,
     send,
     restart,
   };

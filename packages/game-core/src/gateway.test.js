@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import crypto from 'node:crypto';
 import { RoomManager } from './rooms.js';
-import { handleMessage } from './gateway.js';
+import { handleMessage, runHeartbeat } from './gateway.js';
 
 // Recreates the gateway's Session shape with a capturing fake client so the
 // lobby/game dispatch can be tested without a real WebSocket.
@@ -98,5 +98,124 @@ describe('gateway handleMessage', () => {
     expect(a.room.code).not.toBe(b.room.code);
     handleMessage(manager, a, { t: 'game', cardId: 'fromA' });
     expect(b.room.state.lastMsg).toBeUndefined();
+  });
+});
+
+// gateway sessions carry a `spectator` flag and a derived `key`; the real
+// Session class lives in gateway.js, so the test session mirrors its shape.
+function platformSession() {
+  const s = fakeSession();
+  s.spectator = false;
+  Object.defineProperty(s, 'key', {
+    get() {
+      return this.spectator ? `spec:${this.playerId}` : this.playerId;
+    },
+  });
+  return s;
+}
+
+describe('gateway platform messages', () => {
+  let manager;
+  beforeEach(() => {
+    manager = new RoomManager({ test: adapter });
+  });
+
+  it('quick-match seats a player, creating a room when none is open', () => {
+    const s = platformSession();
+    handleMessage(manager, s, { t: 'lobby:quickmatch', gameId: 'test', name: 'Alice' });
+    expect(s.sent.find((m) => m.t === 'joined')).toMatchObject({ seat: 0, isHost: true });
+  });
+
+  it('quick-match reuses an open room', () => {
+    const host = platformSession();
+    handleMessage(manager, host, { t: 'lobby:create', gameId: 'test', name: 'Alice' });
+    const code = host.sent.find((m) => m.t === 'joined').code;
+    const s = platformSession();
+    handleMessage(manager, s, { t: 'lobby:quickmatch', gameId: 'test', name: 'Bob' });
+    expect(s.room.code).toBe(code);
+  });
+
+  it('a spectator joins with seat -1 and cannot act', () => {
+    const host = platformSession();
+    handleMessage(manager, host, { t: 'lobby:create', gameId: 'test', name: 'Alice' });
+    const code = host.sent.find((m) => m.t === 'joined').code;
+
+    const spec = platformSession();
+    handleMessage(manager, spec, { t: 'lobby:spectate', gameId: 'test', code });
+    expect(spec.sent.find((m) => m.t === 'joined')).toMatchObject({ seat: -1 });
+
+    handleMessage(manager, spec, { t: 'game', cardId: 'X' });
+    expect(spec.sent.at(-1)).toMatchObject({ t: 'error', message: 'spectators cannot act' });
+  });
+
+  it('enforces host-only controls', () => {
+    const host = platformSession();
+    handleMessage(manager, host, { t: 'lobby:create', gameId: 'test', name: 'Alice' });
+    const code = host.sent.find((m) => m.t === 'joined').code;
+    const guest = platformSession();
+    handleMessage(manager, guest, { t: 'lobby:join', gameId: 'test', code, name: 'Bob' });
+
+    handleMessage(manager, guest, { t: 'host:lock', locked: true });
+    expect(guest.sent.at(-1)).toMatchObject({ t: 'error', message: 'host only' });
+
+    handleMessage(manager, host, { t: 'host:lock', locked: true });
+    expect(host.room.locked).toBe(true);
+  });
+
+  it('records a pong against the session key', () => {
+    const s = platformSession();
+    handleMessage(manager, s, { t: 'lobby:create', gameId: 'test', name: 'Alice' });
+    handleMessage(manager, s, { t: 'pong', sentAt: 1000 });
+    // No throw, member still present; pong updated lastPong (smoke).
+    expect(s.room.members.get(s.playerId)).toBeTruthy();
+  });
+});
+
+describe('runHeartbeat', () => {
+  // Adapter with a turn pointer so timeout enforcement is observable.
+  const turnAdapter = {
+    engine: {
+      createGame: () => ({ players: [], turn: 0, folded: [] }),
+      addPlayer: (state, { id, name }) => ({
+        ...state,
+        players: [...state.players, { id, name, seat: state.players.length }],
+      }),
+      publicState: (state, seat) => ({ turn: state.turn, mySeat: seat, folded: state.folded }),
+    },
+    minPlayers: 2,
+    maxPlayers: 4,
+    autoStart: () => null,
+    onMessage: (state, playerId, msg) => ({
+      ...state,
+      folded: msg.fold ? [...state.folded, playerId] : state.folded,
+      turn: (state.turn + 1) % state.players.length,
+    }),
+    activeSeat: (state) => (state.players.length ? state.turn : -1),
+    timeoutAction: () => ({ fold: true }),
+    botMove: () => ({ bot: true }),
+  };
+
+  it('auto-folds a dark active player and broadcasts (cannot stall)', () => {
+    const m = new RoomManager({ test: turnAdapter });
+    const room = m.createRoom('test');
+    room.addPlayer('h', 'Host', { readyState: 1, send: () => {} }, { now: 0 });
+    room.addPlayer('g', 'Guest', { readyState: 1, send: () => {} }, { now: 0 });
+    room.state.turn = 0; // host to act
+    room.turnStartedAt = 0;
+    room.recordPong('g', { now: 9000 }); // guest live; host dark
+
+    const broadcasts = [];
+    runHeartbeat(m, (rm) => broadcasts.push(rm.code), { deadAfterMs: 100000, graceMs: 1000, forfeitMs: 60000 }, 9000);
+
+    expect(room.state.folded).toContain('h'); // host auto-folded
+    expect(broadcasts).toContain(room.code);
+  });
+
+  it('GCs a room once all humans are reaped', () => {
+    const m = new RoomManager({ test: turnAdapter });
+    const room = m.createRoom('test');
+    room.addPlayer('h', 'Host', { readyState: 1, send: () => {} }, { now: 0 });
+    runHeartbeat(m, () => {}, { deadAfterMs: 100, graceMs: 50, forfeitMs: 1000 }, 5000);
+    expect(m.rooms.size).toBe(0);
   });
 });

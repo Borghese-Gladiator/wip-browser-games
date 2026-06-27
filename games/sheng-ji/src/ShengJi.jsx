@@ -31,6 +31,10 @@ export function ShengJi() {
     listRooms,
     createRoom,
     joinRoom,
+    quickMatch,
+    spectate,
+    startEarly,
+    lockRoom,
     send,
     restart,
   } = useGameSocket("sheng-ji");
@@ -43,10 +47,14 @@ export function ShengJi() {
         error={error}
         onCreate={createRoom}
         onJoin={joinRoom}
+        onQuickMatch={quickMatch}
+        onSpectate={spectate}
         onRefresh={listRooms}
       />
     );
   }
+
+  const isHost = gameState.isHost ?? room.isHost;
 
   const {
     phase,
@@ -87,6 +95,17 @@ export function ShengJi() {
       </p>
       <h1>Sheng Ji (升级)</h1>
       <p className="sj-room">Room: {room.code}</p>
+
+      {isHost && phase === "waiting" && (
+        <section aria-label="Host controls" className="sj-host">
+          <button className="btn" type="button" onClick={startEarly}>
+            Start with bots
+          </button>
+          <button className="btn" type="button" onClick={() => lockRoom(true)}>
+            Lock room
+          </button>
+        </section>
+      )}
 
       <section aria-label="Status">
         <p role="status" aria-live="polite">

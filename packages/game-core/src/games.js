@@ -15,6 +15,16 @@
 //                  then the per-player result. The framework persists it.
 //   achievements - [{ id, name, predicate(playerId, newRecord, playerRecords) }].
 //                  Unlock conditions the framework evaluates and records.
+//   optionsSchema- (optional) per-room options bag spec (see options.js). Plumbed
+//                  from room creation into createGame(options) so one engine can
+//                  expose variants (stakes, hand count, ruleset) without a new
+//                  package.
+//   activeSeat   - (optional) (state) => seat whose turn it is, or -1. Used by the
+//                  heartbeat-driven turn timer and the bot driver.
+//   timeoutAction- (optional) (state, seat) => game msg to auto-apply when that
+//                  seat's turn times out (e.g. fold). null = nothing to do.
+//   botMove      - (optional) (state, seat) => game msg a bot in that seat plays.
+//                  Trivial policies are fine; the seam matters, not the AI.
 //
 // To add a new multiplayer game: import its engine and add one entry here.
 
@@ -26,11 +36,23 @@ const isFirstWin = (playerId, _newRecord, playerRecords) =>
   playerRecords.filter((r) => r.outcomes.some((o) => o.playerId === playerId && o.rank === 1))
     .length === 1;
 
+// Trivial poker policy shared by the bot driver and the turn-timeout auto-action:
+// never bet into uncertainty — check when free, otherwise fold. Returns a game
+// message ({ action: { type } }) or null when it isn't that seat's turn.
+function pokerSafeMove(state, seat) {
+  const legal = poker.publicState(state, seat).legalActions;
+  if (legal.length === 0) return null;
+  const type = legal.includes('check') ? 'check' : 'fold';
+  return { action: { type } };
+}
+
 const pokerAdapter = {
   id: 'poker',
   engine: poker,
   minPlayers: 2,
   maxPlayers: 4,
+  // Start as soon as the room is full of seats (humans + bots), or when the host
+  // starts early with at least minPlayers (handled in the gateway).
   autoStart: (state) =>
     state.players.length === 4 ? poker.startHand(state) : null,
   onMessage: (state, playerId, msg) => {
@@ -38,6 +60,13 @@ const pokerAdapter = {
     if (msg.restart) return poker.startHand(state);
     throw new Error('unknown poker message');
   },
+  optionsSchema: {
+    stakes: { type: 'enum', values: ['low', 'normal', 'high'], default: 'normal' },
+  },
+  activeSeat: (state) => state.activeSeat,
+  // On timeout the dark/idle seat checks if it's free, else folds.
+  timeoutAction: (state, seat) => pokerSafeMove(state, seat),
+  botMove: (state, seat) => pokerSafeMove(state, seat),
   getOutcome: (state) => {
     if (state.phase !== 'showdown' || !state.winner) return null;
     return {
@@ -55,6 +84,13 @@ const pokerAdapter = {
   achievements: [{ id: 'poker-first-win', name: 'First Win', predicate: isFirstWin }],
 };
 
+// First-legal-card policy for sheng-ji bots and timeouts.
+function shengJiFirstLegal(state, seat) {
+  const legal = shengJi.publicState(state, seat).legalCards;
+  if (!legal || legal.length === 0) return null;
+  return { cardId: legal[0] };
+}
+
 const shengJiAdapter = {
   id: 'sheng-ji',
   engine: shengJi,
@@ -67,6 +103,10 @@ const shengJiAdapter = {
     if (msg.restart) return shengJi.startDeal(state);
     throw new Error('unknown sheng-ji message');
   },
+  activeSeat: (state) => state.activeSeat,
+  // Play the first legal card (publicState exposes legalCards for the active seat).
+  timeoutAction: (state, seat) => shengJiFirstLegal(state, seat),
+  botMove: (state, seat) => shengJiFirstLegal(state, seat),
   getOutcome: (state) => {
     if (state.phase !== 'deal-over' || !state.result) return null;
     const winTeam = state.result.winnerTeam;

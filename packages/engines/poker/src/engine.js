@@ -13,7 +13,12 @@ import {
 export const RAISE_AMOUNT = 100;
 const MAX_PLAYERS = 4;
 
-export function createGame() {
+// `options` is the room's validated options bag. `stakes` scales the fixed raise
+// increment so one engine exposes low/normal/high-stakes variants.
+const STAKES_RAISE = { low: 50, normal: 100, high: 250 };
+
+export function createGame(options = {}) {
+  const raiseAmount = STAKES_RAISE[options.stakes] ?? RAISE_AMOUNT;
   return {
     phase: 'waiting', // 'waiting'|'pre-flop'|'flop'|'turn'|'river'|'showdown'
     players: [], // { id, name, seat, holeCards: string[], folded, bet }
@@ -25,6 +30,7 @@ export function createGame() {
     currentBet: 0,
     actedSeats: [],
     winner: null, // { seat, name, handName, amount }
+    options: { ...options, raiseAmount },
   };
 }
 
@@ -216,7 +222,7 @@ export function applyAction(state, playerId, action) {
     p.bet = next.currentBet;
     next.actedSeats = [...next.actedSeats, seat];
   } else if (action.type === 'raise') {
-    const newBet = next.currentBet + RAISE_AMOUNT;
+    const newBet = next.currentBet + (next.options?.raiseAmount ?? RAISE_AMOUNT);
     next.pot += newBet - p.bet;
     p.bet = newBet;
     next.currentBet = newBet;

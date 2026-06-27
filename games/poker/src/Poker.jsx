@@ -10,6 +10,11 @@ export function Poker() {
     listRooms,
     createRoom,
     joinRoom,
+    quickMatch,
+    spectate,
+    kick,
+    lockRoom,
+    startEarly,
     send,
     restart,
   } = useGameSocket("poker");
@@ -22,10 +27,15 @@ export function Poker() {
         error={error}
         onCreate={createRoom}
         onJoin={joinRoom}
+        onQuickMatch={quickMatch}
+        onSpectate={spectate}
         onRefresh={listRooms}
       />
     );
   }
+
+  const isHost = gameState.isHost ?? room.isHost;
+  const waiting = gameState.phase === "waiting";
 
   const act = (type, extra = {}) => send({ action: { type, ...extra } });
 
@@ -49,6 +59,20 @@ export function Poker() {
       </p>
       <h1>Texas Hold'em</h1>
       <p className="poker-room">Room: {room.code}</p>
+
+      {isHost && waiting && (
+        <section aria-label="Host controls" className="poker-host">
+          <button className="btn" type="button" onClick={startEarly}>
+            Start with bots
+          </button>
+          <button className="btn" type="button" onClick={() => lockRoom(true)}>
+            Lock room
+          </button>
+          <button className="btn" type="button" onClick={() => lockRoom(false)}>
+            Unlock room
+          </button>
+        </section>
+      )}
 
       <p id="status" role="status" aria-live="polite" className="poker-status">
         {statusText}
@@ -82,16 +106,25 @@ export function Poker() {
       <section aria-label="Players">
         <h2>Players</h2>
         <ul className="poker-players">
-          {gameState.players.map((p) => (
-            <li
-              key={p.seat}
-              aria-current={p.seat === gameState.activeSeat ? "true" : undefined}
-            >
-              {p.name}
-              {p.seat === gameState.dealer ? " 🎲" : ""}
-              {p.folded ? " (folded)" : ""}
-            </li>
-          ))}
+          {gameState.players.map((p) => {
+            const pres = gameState.presence?.find((x) => x.seat === p.seat);
+            const live = pres ? pres.isBot || pres.latencyMs >= 0 : true;
+            return (
+              <li
+                key={p.seat}
+                aria-current={p.seat === gameState.activeSeat ? "true" : undefined}
+              >
+                <span
+                  className={`presence-dot ${live ? "is-live" : "is-dark"}`}
+                  aria-hidden="true"
+                />
+                {p.name}
+                {pres?.isBot ? " 🤖" : ""}
+                {p.seat === gameState.dealer ? " 🎲" : ""}
+                {p.folded ? " (folded)" : ""}
+              </li>
+            );
+          })}
         </ul>
       </section>
 

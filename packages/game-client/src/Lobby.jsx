@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useIdentity } from "./useIdentity.js";
 import { PlayerCodeModal } from "./PlayerCodeModal.jsx";
 
-export function Lobby({ title, rooms, error, onCreate, onJoin, onRefresh }) {
+export function Lobby({ title, rooms, error, onCreate, onJoin, onRefresh, onQuickMatch, onSpectate }) {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const { color, playerCode, importIdentity } = useIdentity();
@@ -42,6 +42,16 @@ export function Lobby({ title, rooms, error, onCreate, onJoin, onRefresh }) {
         <button className="btn" type="submit" disabled={!nameOk}>
           Create room
         </button>
+        {onQuickMatch && (
+          <button
+            className="btn btn-primary"
+            type="button"
+            disabled={!nameOk}
+            onClick={() => onQuickMatch(name.trim())}
+          >
+            Play now
+          </button>
+        )}
       </form>
 
       <form
@@ -84,8 +94,17 @@ export function Lobby({ title, rooms, error, onCreate, onJoin, onRefresh }) {
                   disabled={!nameOk}
                   onClick={() => onJoin(r.code, name.trim())}
                 >
-                  {r.code} ({r.players}/{r.max})
+                  {r.code} ({r.players}/{r.max}){r.locked ? " 🔒" : ""}
                 </button>
+                {onSpectate && (
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => onSpectate(r.code)}
+                  >
+                    Watch
+                  </button>
+                )}
               </li>
             ))}
           </ul>

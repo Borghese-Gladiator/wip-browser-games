@@ -45,6 +45,16 @@
   margin-top: 1rem;
 }
 
+.btn-primary {
+  background: var(--accent, #2d7ff9);
+  color: #fff;
+}
+
+.lobby-rooms li {
+  display: flex;
+  gap: 0.25rem;
+}
+
 .lobby-identity {
   display: flex;
   align-items: center;
