@@ -94,4 +94,14 @@ describe('RoomManager', () => {
     room.addPlayer('p2', 'Bob', {});
     expect(room.viewFor('p2').mySeat).toBe(1);
   });
+
+  it('reconnecting player reclaims the same seat without re-adding to engine state', () => {
+    const room = manager().createRoom('test');
+    const fakeClient = { readyState: 1, send: () => {} };
+    room.addPlayer('p1', 'Alice', fakeClient);
+    room.removePlayer('p1'); // simulate disconnect
+    const seat = room.addPlayer('p1', 'Alice', fakeClient); // reconnect
+    expect(seat).toBe(0);
+    expect(room.state.players).toHaveLength(1); // not double-added
+  });
 });

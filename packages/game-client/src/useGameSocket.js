@@ -5,10 +5,12 @@
 // All games connect to the same gateway URL and identify themselves by gameId;
 // the server routes by room code once joined.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useIdentity } from "./useIdentity.js";
 
 const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || "ws://localhost:3001";
 
 export function useGameSocket(gameId) {
+  const { playerId } = useIdentity();
   const [connected, setConnected] = useState(false);
   const [rooms, setRooms] = useState([]);
   const [room, setRoom] = useState(null); // { code, seat } once joined
@@ -17,7 +19,7 @@ export function useGameSocket(gameId) {
   const ws = useRef(null);
 
   useEffect(() => {
-    const socket = new WebSocket(GATEWAY_URL);
+    const socket = new WebSocket(`${GATEWAY_URL}?playerId=${encodeURIComponent(playerId)}`);
     ws.current = socket;
     socket.onopen = () => setConnected(true);
     socket.onclose = () => setConnected(false);
@@ -43,7 +45,7 @@ export function useGameSocket(gameId) {
       }
     };
     return () => socket.close();
-  }, []);
+  }, [playerId]);
 
   const rawSend = useCallback((obj) => ws.current?.send(JSON.stringify(obj)), []);
 

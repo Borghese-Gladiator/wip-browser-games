@@ -37,6 +37,13 @@ export class Room {
   // Seat a player. Throws (via the engine) if the name is taken or table full.
   // Returns the assigned seat. Fires the adapter's autoStart when at capacity.
   addPlayer(playerId, name, client) {
+    // Reconnect: player already seated in engine state — restore the socket
+    // reference only; engine state (including per-seat private state) is intact.
+    const existing = this.state.players.find((p) => p.id === playerId);
+    if (existing) {
+      this.members.set(playerId, { id: playerId, seat: existing.seat, client });
+      return existing.seat;
+    }
     this.state = this.adapter.engine.addPlayer(this.state, { id: playerId, name });
     const seat = this.state.players.find((p) => p.id === playerId).seat;
     this.members.set(playerId, { id: playerId, seat, client });

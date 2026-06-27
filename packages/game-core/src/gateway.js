@@ -22,12 +22,20 @@ import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { RoomManager } from './rooms.js';
 import { adapters } from './games.js';
+import { sanitizeName } from '@portal/shared/sanitize';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function isValidUUID(s) {
+  return typeof s === 'string' && UUID_RE.test(s);
+}
 
 // Per-connection session. Tracks which room (if any) this socket is seated in.
+// The playerId is supplied by the client (localStorage UUID) so a returning
+// player keeps the same identity across reconnects.
 class Session {
-  constructor(client) {
+  constructor(client, playerId) {
     this.client = client;
-    this.playerId = crypto.randomUUID();
+    this.playerId = playerId;
     this.room = null;
   }
   send(obj) {
@@ -53,13 +61,15 @@ export function handleMessage(manager, session, msg) {
         return;
       }
       case 'lobby:create': {
+        const name = sanitizeName(msg.name); // throws → outer catch → error reply
         const room = manager.createRoom(msg.gameId);
-        joinRoom(room, session, msg.name);
+        joinRoom(room, session, name);
         return;
       }
       case 'lobby:join': {
+        const name = sanitizeName(msg.name);
         const room = manager.getRoom(msg.code);
-        joinRoom(room, session, msg.name);
+        joinRoom(room, session, name);
         return;
       }
       case 'game': {
@@ -93,8 +103,11 @@ export function createGateway({ port = 3001, manager = new RoomManager(adapters)
   const wss = new WebSocketServer({ port });
   console.log(`Game gateway listening on :${port}`);
 
-  wss.on('connection', (ws) => {
-    const session = new Session(ws);
+  wss.on('connection', (ws, req) => {
+    const params = new URL(req.url, 'http://localhost').searchParams;
+    const clientId = params.get('playerId');
+    const playerId = isValidUUID(clientId) ? clientId : crypto.randomUUID();
+    const session = new Session(ws, playerId);
     ws.on('message', (raw) => {
       let msg;
       try {

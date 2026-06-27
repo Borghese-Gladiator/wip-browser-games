@@ -2,10 +2,14 @@
 // create a new room (getting a shareable code) or join an existing one by code.
 // Also lists open rooms for this game so players can join with one click.
 import { useEffect, useState } from "react";
+import { useIdentity } from "./useIdentity.js";
+import { PlayerCodeModal } from "./PlayerCodeModal.jsx";
 
 export function Lobby({ title, rooms, error, onCreate, onJoin, onRefresh }) {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const { color, playerCode, importIdentity } = useIdentity();
+  const [showCode, setShowCode] = useState(false);
 
   useEffect(() => {
     onRefresh?.();
@@ -92,6 +96,20 @@ export function Lobby({ title, rooms, error, onCreate, onJoin, onRefresh }) {
         <p role="alert" className="lobby-error">
           {error}
         </p>
+      )}
+
+      <div className="lobby-identity">
+        <span className="lobby-avatar" style={{ background: color }} aria-hidden="true" />
+        <button className="btn" type="button" onClick={() => setShowCode(true)}>
+          Player code
+        </button>
+      </div>
+      {showCode && (
+        <PlayerCodeModal
+          playerCode={playerCode}
+          onImport={importIdentity}
+          onClose={() => setShowCode(false)}
+        />
       )}
     </main>
   );
