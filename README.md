@@ -1,33 +1,37 @@
 # Browser Games
 
 A small gaming portal: a landing page that lists games, with each game living in
-its own page. Built as an npm-workspaces monorepo using Vite + React.
+its own page. Built as an npm-workspaces monorepo using Vite + React. Multiplayer
+games share a single WebSocket gateway with a built-in lobby.
 
 ## Layout
 
 ```
 .
 ├── index.html              # Portal entry (root page)
-├── vite.config.js          # Multi-page build: portal + one entry per game
+├── vite.config.js          # Multi-page build; inputs derived from the registry
 ├── package.json            # Workspaces root + scripts
+├── bin/
+│   └── dev-server.js       # Boots the multiplayer gateway (one process, all games)
 ├── packages/
-│   └── shared/             # @portal/shared
-│       └── src/
-│           ├── registry.js # Hand-maintained list of games
-│           └── theme.css   # Shared design tokens
+│   ├── shared/             # @portal/shared — registry (source of truth) + theme
+│   ├── game-core/          # @browser-games/game-core — gateway, rooms, lobby
+│   │   └── src/
+│   │       ├── gateway.js  # Single WS server; routes by gameId + room code
+│   │       ├── rooms.js    # Room + RoomManager (per-room engine state, seats)
+│   │       └── games.js    # Adapter registry: gameId -> engine + glue
+│   ├── game-client/        # @browser-games/game-client — shared React client
+│   │   └── src/
+│   │       ├── useGameSocket.js  # Connect, lobby actions, send game messages
+│   │       └── Lobby.jsx         # Shared create/join-room UI
+│   └── engines/            # Pure, transport-free game engines
+│       ├── poker/          # @browser-games/engine-poker
+│       └── sheng-ji/       # @browser-games/engine-sheng-ji
 ├── portal/                 # @portal/app — the landing page (React)
-│   └── src/
-│       ├── main.jsx
-│       ├── Portal.jsx      # Renders a card per registry entry
-│       └── portal.css
 └── games/
-    └── tic-tac-toe/        # @portal/game-tic-tac-toe
-        ├── index.html      # Game page entry (/games/tic-tac-toe/)
-        └── src/
-            ├── main.jsx
-            ├── TicTacToe.jsx
-            ├── ttt.js       # Pure game logic (unit-tested)
-            └── ttt.test.js
+    ├── tic-tac-toe/        # Local game (no server)
+    ├── poker/              # Multiplayer — uses game-client + gateway
+    └── sheng-ji/           # Multiplayer — uses game-client + gateway
 ```
 
 ## Install
@@ -38,11 +42,16 @@ npm install
 
 ## Run (dev)
 
+Multiplayer games need the gateway running alongside the Vite dev server (two
+terminals):
+
 ```
-npm run dev
+npm run server   # multiplayer gateway on :3001
+npm run dev      # portal + games on :5173
 ```
 
-Open the printed URL for the portal; click a game card to navigate to it.
+Open the Vite URL for the portal; click a game card to navigate to it.
+Tic-Tac-Toe is local and needs only `npm run dev`.
 
 ## Build / preview (prod)
 
@@ -54,18 +63,60 @@ npm run preview
 ## Test
 
 ```
-npm test
+npm test           # unit tests (engines, rooms, gateway, pure logic)
+npm run test:e2e   # Playwright; boots the gateway + Vite, plays full games
 ```
-
-Unit tests cover the pure game logic (e.g. `games/tic-tac-toe/src/ttt.js`).
 
 ## Adding a game
 
-1. Create `games/<id>/` with an `index.html` and a `src/main.jsx` entry (use
-   `games/tic-tac-toe/` as a template).
-2. Add an entry to `packages/shared/src/registry.js` (`id`, `title`,
-   `description`, `emoji`, `path`).
-3. Add the game's `index.html` to the `input` map in `vite.config.js`.
+The registry (`packages/shared/src/registry.js`) is the single source of truth —
+the portal grid and the Vite multi-page `input` map both derive from it.
 
-Shared theme tokens live in `@portal/shared/theme.css`; import it from each
-game's entry to stay visually consistent.
+**Local game (no server):**
+
+1. Create `games/<id>/` with `index.html` and `src/main.jsx` (use
+   `games/tic-tac-toe/` as a template). Put pure game logic in a separate,
+   unit-tested module.
+2. Add an entry to the registry: `id`, `title`, `description`, `emoji`, `path`,
+   `multiplayer: false`.
+
+That's it — no `vite.config.js` edit needed.
+
+**Multiplayer game:** do the two steps above with `multiplayer: true`, then:
+
+3. Write a **pure engine** in `packages/engines/<id>/` exporting `createGame`,
+   `addPlayer(state, {id, name})`, `publicState(state, seat)`, plus your own
+   start and action functions. No sockets, no I/O — see the poker/sheng-ji
+   engines.
+4. Register an **adapter** in `packages/game-core/src/games.js`:
+
+   ```js
+   import * as myGame from '@browser-games/engine-my-game';
+
+   myGame: {
+     id: 'my-game',
+     engine: myGame,
+     minPlayers: 2,
+     maxPlayers: 4,
+     autoStart: (s) => (s.players.length === 4 ? myGame.start(s) : null),
+     onMessage: (s, playerId, msg) => myGame.applyMove(s, playerId, msg.move),
+   }
+   ```
+
+5. In the game's React component, use the shared client — no bespoke WebSocket
+   code:
+
+   ```jsx
+   const { rooms, room, gameState, createRoom, joinRoom, send, restart } =
+     useGameSocket('my-game');
+   ```
+
+   Render `<Lobby>` until `room` is set, then your board. Send moves with
+   `send({ move })`, matching the adapter's `onMessage`.
+
+The gateway, rooms, lobby, and per-seat state broadcast are all provided by the
+framework — you only supply the engine, the adapter, and the board UI.
+
+Shared theme tokens live in `@portal/shared/theme.css`; the lobby styling is in
+`@browser-games/game-client/lobby.css`. Import both from a multiplayer game's
+entry to stay visually consistent.
