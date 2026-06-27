@@ -105,6 +105,20 @@ function broadcastRoom(room) {
   }
 }
 
+// Broadcast a single shared chat payload to everyone in the room (members and
+// spectators alike). Unlike broadcastRoom, the payload is identical for all —
+// chat has no per-seat view.
+function broadcastChat(room, msg) {
+  const raw = JSON.stringify(msg);
+  for (const { client, isBot } of room.members.values()) {
+    if (isBot || !isOpen(client)) continue;
+    client.send(raw);
+  }
+  for (const { client } of room.spectators.values()) {
+    if (isOpen(client)) client.send(raw);
+  }
+}
+
 // Core dispatch. Pure-ish: depends only on the manager and the session. Exported
 // for tests. Returns nothing; effects happen via session.send / broadcastRoom.
 export function handleMessage(manager, session, msg) {
@@ -170,6 +184,15 @@ export function handleMessage(manager, session, msg) {
         if (session.spectator) throw new Error('spectators cannot act');
         requireRoom(session).applyMessage(session.playerId, { restart: true });
         broadcastRoom(session.room);
+        return;
+      }
+      case 'chat': {
+        const room = requireRoom(session);
+        const player = room.state.players.find((p) => p.id === session.playerId);
+        const name = player?.name ?? 'Player';
+        const text = String(msg.text ?? '').slice(0, 200);
+        if (!text) return;
+        broadcastChat(room, { t: 'chat', from: session.playerId, name, text, ts: Date.now() });
         return;
       }
       default:

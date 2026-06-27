@@ -1,11 +1,21 @@
 import { useGameSocket } from "@browser-games/game-client/useGameSocket";
 import { Lobby } from "@browser-games/game-client/Lobby";
+import { ConnectionBanner } from "@browser-games/game-client/ConnectionBanner";
+import { PlayerList } from "@browser-games/game-client/PlayerList";
+import { RoomCode } from "@browser-games/game-client/RoomCode";
+import { Chat } from "@browser-games/game-client/Chat";
+import { SpectatorView } from "@browser-games/game-client/SpectatorView";
+import { useYourTurn } from "@browser-games/game-client/useYourTurn";
+import "@browser-games/game-client/chrome.css";
 
 export function Poker() {
   const {
+    connectionStatus,
     rooms,
     room,
     gameState,
+    chatMessages,
+    sendChat,
     error,
     listRooms,
     createRoom,
@@ -18,6 +28,8 @@ export function Poker() {
     send,
     restart,
   } = useGameSocket("poker");
+
+  useYourTurn(gameState, room?.seat);
 
   if (!room || !gameState) {
     return (
@@ -32,6 +44,10 @@ export function Poker() {
         onRefresh={listRooms}
       />
     );
+  }
+
+  if (room.seat === -1) {
+    return <SpectatorView gameState={gameState} gameId="poker" />;
   }
 
   const isHost = gameState.isHost ?? room.isHost;
@@ -54,11 +70,12 @@ export function Poker() {
 
   return (
     <main className="poker">
+      <ConnectionBanner connectionStatus={connectionStatus} />
       <p className="poker-back">
         <a href="/">← All games</a>
       </p>
       <h1>Texas Hold'em</h1>
-      <p className="poker-room">Room: {room.code}</p>
+      <RoomCode code={room.code} />
 
       {isHost && waiting && (
         <section aria-label="Host controls" className="poker-host">
@@ -105,27 +122,12 @@ export function Poker() {
 
       <section aria-label="Players">
         <h2>Players</h2>
-        <ul className="poker-players">
-          {gameState.players.map((p) => {
-            const pres = gameState.presence?.find((x) => x.seat === p.seat);
-            const live = pres ? pres.isBot || pres.latencyMs >= 0 : true;
-            return (
-              <li
-                key={p.seat}
-                aria-current={p.seat === gameState.activeSeat ? "true" : undefined}
-              >
-                <span
-                  className={`presence-dot ${live ? "is-live" : "is-dark"}`}
-                  aria-hidden="true"
-                />
-                {p.name}
-                {pres?.isBot ? " 🤖" : ""}
-                {p.seat === gameState.dealer ? " 🎲" : ""}
-                {p.folded ? " (folded)" : ""}
-              </li>
-            );
-          })}
-        </ul>
+        <PlayerList
+          players={gameState.players}
+          presence={gameState.presence}
+          mySeat={gameState.mySeat}
+          activeSeat={gameState.activeSeat}
+        />
       </section>
 
       {legalActions.length > 0 && (
@@ -170,6 +172,8 @@ export function Poker() {
           Play again
         </button>
       )}
+
+      <Chat messages={chatMessages} onSend={sendChat} />
 
       {error && (
         <p role="alert" className="poker-error">

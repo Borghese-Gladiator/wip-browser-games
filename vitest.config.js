@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
 
 // Unit tests only. The Playwright E2E suite under e2e/ is run separately via
 // `npm run test:e2e` and must not be collected by vitest.
@@ -8,6 +9,7 @@ import { defineConfig } from "vitest/config";
 // alias so suites that import the gateway/adapters run without relying on
 // node_modules symlinks being present in every checkout.
 export default defineConfig({
+  plugins: [react()],
   resolve: {
     alias: {
       "@browser-games/engine-poker/handEval": resolve(
@@ -24,6 +26,7 @@ export default defineConfig({
       ),
       "@portal/shared/sanitize": resolve(__dirname, "packages/shared/src/sanitize.js"),
       "@portal/shared/leaderboard": resolve(__dirname, "packages/shared/src/leaderboard.js"),
+      "@portal/shared/identity": resolve(__dirname, "packages/shared/src/identity.js"),
       "@portal/shared": resolve(__dirname, "packages/shared/src/registry.js"),
     },
   },

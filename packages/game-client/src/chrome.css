@@ -1,0 +1,184 @@
+/* Shared chrome styles for game-client components. Themed via the same CSS
+   variables as theme.css (--accent, --line, --cell, --text, --muted). */
+
+/* Connection banner — fixed top bar driven by useGameSocket's status. */
+.connection-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 0.6rem 1rem;
+  text-align: center;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.connection-banner[data-status="reconnecting"] {
+  background: #fbbf24;
+}
+
+.connection-banner[data-status="disconnected"] {
+  background: #f87171;
+  color: #fff;
+}
+
+/* Presence dots (moved here from poker.css so every game shares them). */
+.presence-dot {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+}
+
+.presence-dot.is-live {
+  background: #22c55e;
+}
+
+.presence-dot.is-dark {
+  background: #9ca3af;
+}
+
+/* Player list */
+.player-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.player-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.player-list-item[aria-current="true"] {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.player-avatar {
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  flex-shrink: 0;
+}
+
+/* Identity chip */
+.player-name-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lobby-avatar {
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+}
+
+/* Room code */
+.room-code {
+  margin: 0;
+}
+
+/* Buttons (shared small / active variants) */
+.btn-sm {
+  padding: 0.3rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.btn-active {
+  background: var(--accent);
+  color: var(--cell);
+}
+
+/* Leaderboard */
+.leaderboard {
+  text-align: center;
+}
+
+.leaderboard-tabs {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.leaderboard-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+/* Chat */
+.game-chat {
+  width: 100%;
+  max-width: 28rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.chat-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem;
+  max-height: 12rem;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--cell);
+  text-align: left;
+}
+
+.chat-messages li {
+  padding: 0.1rem 0;
+}
+
+.chat-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.chat-form input {
+  flex: 1;
+  font-size: 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--cell);
+  color: var(--text);
+}
+
+/* Spectator / replay viewer */
+.spectator-view {
+  padding: 4rem 1.5rem 2rem;
+}
+
+.spectator-banner {
+  font-weight: 700;
+  color: var(--accent);
+  text-align: center;
+}
+
+.spectator-state {
+  max-height: 60vh;
+  overflow: auto;
+  background: var(--cell);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1rem;
+  font-size: 0.8rem;
+  text-align: left;
+}

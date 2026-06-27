@@ -121,19 +121,3 @@
   justify-content: center;
   margin-bottom: 1rem;
 }
-
-.presence-dot {
-  display: inline-block;
-  width: 0.6rem;
-  height: 0.6rem;
-  border-radius: 50%;
-  margin-right: 0.4rem;
-}
-
-.presence-dot.is-live {
-  background: #22c55e;
-}
-
-.presence-dot.is-dark {
-  background: #9ca3af;
-}
