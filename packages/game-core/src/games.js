@@ -49,6 +49,18 @@ function pokerSafeMove(state, seat) {
 const pokerAdapter = {
   id: 'poker',
   engine: poker,
+  engineVersion: '1.0.0',
+  enabled: true,
+  // Shapes the gateway accepts for this game; an inbound game message must match
+  // at least one before it reaches the engine.
+  validGameMessages: [{ action: 'object' }, { restart: 'boolean' }],
+  // Server-authoritative sanity check: reject an action submitted out of turn.
+  anticheat: (state, playerId, msg) => {
+    if (msg.action && state.players.find((p) => p.id === playerId)?.seat !== state.activeSeat) {
+      return 'action out of turn';
+    }
+    return null;
+  },
   minPlayers: 2,
   maxPlayers: 4,
   // Start as soon as the room is full of seats (humans + bots), or when the host
@@ -94,6 +106,15 @@ function shengJiFirstLegal(state, seat) {
 const shengJiAdapter = {
   id: 'sheng-ji',
   engine: shengJi,
+  engineVersion: '1.0.0',
+  enabled: true,
+  validGameMessages: [{ cardId: 'string' }, { restart: 'boolean' }],
+  anticheat: (state, playerId, msg) => {
+    if (msg.cardId && state.players.find((p) => p.id === playerId)?.seat !== state.activeSeat) {
+      return 'action out of turn';
+    }
+    return null;
+  },
   minPlayers: 4,
   maxPlayers: 4,
   autoStart: (state) =>
@@ -123,7 +144,20 @@ const shengJiAdapter = {
   achievements: [{ id: 'shengji-first-win', name: 'Team Player', predicate: isFirstWin }],
 };
 
+// Disabled fixture adapter, never listed in the portal registry. It exists only
+// so the disabled-game rejection path has something to exercise.
+const infraTestAdapter = {
+  id: '_infra-test',
+  engine: { createGame: () => ({}), addPlayer: (s) => s, publicState: (s) => s },
+  minPlayers: 2,
+  maxPlayers: 2,
+  autoStart: () => null,
+  onMessage: (s) => s,
+  enabled: false,
+};
+
 export const adapters = {
   poker: pokerAdapter,
   'sheng-ji': shengJiAdapter,
+  '_infra-test': infraTestAdapter,
 };

@@ -5,6 +5,9 @@
   "type": "module",
   "main": "src/registry.js",
   "exports": {
+    "./version": "./src/version.js",
+    "./validate": "./src/validate.js",
+    "./rateLimit": "./src/rateLimit.js",
     "./registry": "./src/registry.js",
     "./theme.css": "./src/theme.css",
     "./identity": "./src/identity.js",

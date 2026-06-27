@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useIdentity } from "./useIdentity.js";
 import { nextDelay, shouldReconnect } from "./reconnect.js";
+import { PROTOCOL_VERSION } from "@portal/shared/version";
 
 const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || "ws://localhost:3001";
 
@@ -19,6 +20,8 @@ export function useGameSocket(gameId) {
   const [gameState, setGameState] = useState(null); // includes presence, isHost
   const [chatMessages, setChatMessages] = useState([]);
   const [error, setError] = useState("");
+  // Set when the server's protocolVersion differs from ours (deploy mismatch).
+  const [needsRefresh, setNeedsRefresh] = useState(false);
   // Bumped on disconnect to re-run the connect effect (carrying the same playerId).
   const [retrySignal, setRetrySignal] = useState(0);
   const ws = useRef(null);
@@ -48,6 +51,9 @@ export function useGameSocket(gameId) {
     socket.onmessage = (e) => {
       const msg = JSON.parse(e.data);
       switch (msg.t) {
+        case "hello":
+          if (msg.protocolVersion !== PROTOCOL_VERSION) setNeedsRefresh(true);
+          break;
         case "rooms":
           setRooms(msg.rooms);
           break;
@@ -137,6 +143,7 @@ export function useGameSocket(gameId) {
     chatMessages,
     sendChat,
     error,
+    needsRefresh,
     listRooms,
     createRoom,
     joinRoom,

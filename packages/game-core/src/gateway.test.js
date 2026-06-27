@@ -171,6 +171,47 @@ describe('gateway platform messages', () => {
   });
 });
 
+describe('gateway central validation', () => {
+  // Adapter that declares a message schema; the gateway must reject shapes that
+  // don't match before they reach the engine.
+  const schemaAdapter = {
+    ...adapter,
+    validGameMessages: [{ cardId: 'string' }, { restart: 'boolean' }],
+  };
+
+  function joinedSession(manager) {
+    const s = fakeSession();
+    handleMessage(manager, s, { t: 'lobby:create', gameId: 'test', name: 'Alice' });
+    s.sent.length = 0;
+    return s;
+  }
+
+  it('passes a schema-valid game message to the engine', () => {
+    const m = new RoomManager({ test: schemaAdapter });
+    const s = joinedSession(m);
+    handleMessage(m, s, { t: 'game', cardId: 'AS' });
+    expect(s.room.state.lastMsg).toMatchObject({ cardId: 'AS' });
+    expect(s.sent.at(-1)).toMatchObject({ t: 'state' });
+  });
+
+  it('rejects a malformed game message without mutating state', () => {
+    const m = new RoomManager({ test: schemaAdapter });
+    const s = joinedSession(m);
+    handleMessage(m, s, { t: 'game', __evil: true });
+    expect(s.sent.at(-1)).toMatchObject({ t: 'error' });
+    expect(s.sent.at(-1).message).toMatch(/invalid message/);
+    expect(s.room.state.lastMsg).toBeUndefined();
+  });
+
+  it('rejects a wrong-typed game message', () => {
+    const m = new RoomManager({ test: schemaAdapter });
+    const s = joinedSession(m);
+    handleMessage(m, s, { t: 'game', cardId: 42 });
+    expect(s.sent.at(-1)).toMatchObject({ t: 'error' });
+    expect(s.room.state.lastMsg).toBeUndefined();
+  });
+});
+
 describe('runHeartbeat', () => {
   // Adapter with a turn pointer so timeout enforcement is observable.
   const turnAdapter = {

@@ -341,4 +341,81 @@ describe('Room event log', () => {
     room.applyMessage('h', { phase: 'active' });
     expect(room.phaseEnteredAt).toBeGreaterThan(0);
   });
+
+  it('seq keeps advancing past the ring-buffer cap (no reuse)', () => {
+    const room = mgr().createRoom('test');
+    room.addPlayer('h', 'Host', {});
+    room.addPlayer('g', 'Guest', {});
+    for (let i = 0; i < 205; i++) room.applyMessage('h', { skip: i });
+    expect(room.eventLog[room.eventLog.length - 1].seq).toBe(204);
+  });
+});
+
+describe('feature flag / disabled game', () => {
+  it('createRoom throws for a disabled adapter', () => {
+    const m = new RoomManager({ off: makeAdapter({ enabled: false }) });
+    expect(() => m.createRoom('off')).toThrow(/disabled/);
+  });
+
+  it('createRoom allows an explicitly enabled adapter', () => {
+    const m = new RoomManager({ on: makeAdapter({ enabled: true }) });
+    expect(m.createRoom('on').code).toHaveLength(4);
+  });
+});
+
+describe('anti-cheat hook', () => {
+  function anticheatManager() {
+    return new RoomManager({
+      test: makeAdapter({
+        anticheat: (_state, _pid, msg) => (msg.illegal ? 'illegal action' : null),
+        onMessage: (state) => ({ ...state, moved: true }),
+      }),
+    });
+  }
+
+  it('rejects an illegal action and does not mutate state', () => {
+    const room = anticheatManager().createRoom('test');
+    room.addPlayer('h', 'Host', {});
+    room.addPlayer('g', 'Guest', {});
+    expect(() => room.applyMessage('h', { illegal: true })).toThrow(/anticheat: illegal action/);
+    expect(room.state.moved).toBeUndefined();
+    expect(room.eventLog).toHaveLength(0);
+  });
+
+  it('allows a legal action through', () => {
+    const room = anticheatManager().createRoom('test');
+    room.addPlayer('h', 'Host', {});
+    room.addPlayer('g', 'Guest', {});
+    room.applyMessage('h', { ok: true });
+    expect(room.state.moved).toBe(true);
+  });
+});
+
+describe('snapshot / restore', () => {
+  it('round-trips room state and members through a snapshot', () => {
+    const m = new RoomManager({ test: makeAdapter({ onMessage: (s) => ({ ...s, n: (s.n ?? 0) + 1 }) }) });
+    const room = m.createRoom('test');
+    room.addPlayer('h', 'Host', {});
+    room.addPlayer('g', 'Guest', {});
+    room.applyMessage('h', { go: true });
+
+    const snap = room.snapshot();
+    snap.gameId = 'test';
+
+    const m2 = new RoomManager({ test: makeAdapter() });
+    m2.restoreRoom(snap);
+    const restored = m2.getRoom(room.code);
+
+    expect(restored.state).toEqual(room.state);
+    expect(restored._eventSeq).toBe(room._eventSeq);
+    expect(restored.host).toBe('h');
+    expect(restored.members.get('h').seat).toBe(0);
+    expect(restored.members.get('h').client).toBeNull();
+  });
+
+  it('restoreRoom skips a disabled game', () => {
+    const m = new RoomManager({ off: makeAdapter({ enabled: false }) });
+    m.restoreRoom({ code: 'AAAA', gameId: 'off', options: {}, state: {}, members: [] });
+    expect(m.rooms.has('AAAA')).toBe(false);
+  });
 });

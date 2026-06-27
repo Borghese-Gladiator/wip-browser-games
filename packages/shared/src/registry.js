@@ -15,6 +15,8 @@ export const games = [
     emoji: "⭕",
     path: "/games/tic-tac-toe/",
     multiplayer: false,
+    // enabled: false hides the game on the portal and prevents new room creation
+    enabled: true,
   },
   {
     id: "poker",
@@ -23,6 +25,7 @@ export const games = [
     emoji: "🃏",
     path: "/games/poker/",
     multiplayer: true,
+    enabled: true,
   },
   {
     id: "sheng-ji",
@@ -31,5 +34,6 @@ export const games = [
     emoji: "🀄",
     path: "/games/sheng-ji/",
     multiplayer: true,
+    enabled: true,
   },
 ];

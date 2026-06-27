@@ -30,8 +30,11 @@ import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { RoomManager } from './rooms.js';
 import { adapters } from './games.js';
-import { OutcomeStore, AchievementStore } from './store.js';
+import { OutcomeStore, AchievementStore, SnapshotStore } from './store.js';
 import { sanitizeName } from '@portal/shared/sanitize';
+import { PROTOCOL_VERSION } from '@portal/shared/version';
+import { validateMessage } from '@portal/shared/validate';
+import { TokenBucket } from '@portal/shared/rateLimit';
 import {
   computeBoard,
   matchHistory,
@@ -56,6 +59,9 @@ const HEARTBEAT = {
   GRACE_MS: 10000,
   FORFEIT_MS: 60000,
 };
+
+const RATE_LIMIT = { capacity: 30, refillRate: 2, refillIntervalMs: 1000 };
+const SNAPSHOT_INTERVAL_MS = 60_000;
 
 const ADMIN_HTML = `<!DOCTYPE html><html><head><title>Game Admin</title><meta charset="utf-8">
 <style>body{font-family:monospace;padding:1rem}table{border-collapse:collapse;width:100%}
@@ -196,7 +202,13 @@ export function handleMessage(manager, session, msg, logger = null) {
       }
       case 'game': {
         if (session.spectator) throw new Error('spectators cannot act');
-        requireRoom(session).applyMessage(session.playerId, msg);
+        const room = requireRoom(session);
+        const schema = room.adapter.validGameMessages;
+        if (schema) {
+          const { ok, reason } = validateMessage(schema, msg);
+          if (!ok) throw new Error(`invalid message: ${reason}`);
+        }
+        room.applyMessage(session.playerId, msg);
         broadcastRoom(session.room);
         return;
       }
@@ -251,6 +263,7 @@ function joinRoom(room, session, name) {
     seat,
     isHost: session.playerId === room.host,
     options: room.options,
+    engineVersion: room.adapter.engineVersion,
   });
   broadcastRoom(room);
 }
@@ -259,6 +272,7 @@ export function createGateway({
   port = 3001,
   outcomesPath = './outcomes.json',
   achievementsPath = './achievements.json',
+  snapshotsPath = './snapshots',
   manager,
 } = {}) {
   const outcomeStore = new OutcomeStore(outcomesPath);
@@ -300,6 +314,25 @@ export function createGateway({
   }
 
   if (!manager) manager = new RoomManager(adapters, { onGameEnd, onGameStart });
+
+  const snapshotStore = new SnapshotStore(snapshotsPath);
+  let draining = false;
+  const rateLimitMap = new Map();
+  function getRateBucket(ip) {
+    if (!rateLimitMap.has(ip)) rateLimitMap.set(ip, new TokenBucket(RATE_LIMIT));
+    return rateLimitMap.get(ip);
+  }
+
+  // Resume in-flight rooms persisted before the last shutdown/crash.
+  for (const code of snapshotStore.list()) {
+    try {
+      manager.restoreRoom(snapshotStore.load(code));
+      log.info('room restored', { roomCode: code });
+    } catch (e) {
+      log.error('snapshot restore failed', { roomCode: code, err: e.message });
+      snapshotStore.delete(code);
+    }
+  }
 
   // Read-only HTTP surface for leaderboards / history / head-to-head, served on
   // the same port as the WebSocket gateway. All views derive from outcomeStore.
@@ -393,11 +426,23 @@ export function createGateway({
     const clientId = params.get('playerId');
     const playerId = isValidUUID(clientId) ? clientId : crypto.randomUUID();
     const session = new Session(ws, playerId);
+    const remoteIp = req.socket.remoteAddress ?? '?';
+    // Version handshake: a client left open across a deploy compares this on
+    // arrival and prompts a refresh instead of silently desyncing.
+    session.send({ t: 'hello', protocolVersion: PROTOCOL_VERSION });
     ws.on('message', (raw) => {
+      if (!getRateBucket(remoteIp).consume()) {
+        session.send({ t: 'error', message: 'rate limit exceeded' });
+        return;
+      }
       let msg;
       try {
         msg = JSON.parse(raw);
       } catch {
+        return;
+      }
+      if (draining && (msg.t === 'lobby:create' || msg.t === 'lobby:quickmatch')) {
+        session.send({ t: 'error', message: 'server is shutting down' });
         return;
       }
       // Funnel and message-rate accounting happen here so handleMessage stays stateless.
@@ -426,7 +471,33 @@ export function createGateway({
   }, HEARTBEAT.PING_MS);
   wss.on('close', () => clearInterval(heartbeat));
 
-  return wss;
+  // Periodic persistence so a restart can resume active rooms.
+  const snapshotTimer = setInterval(() => {
+    for (const room of manager.rooms.values()) {
+      try { snapshotStore.save(room.code, room.snapshot()); } catch {}
+    }
+  }, SNAPSHOT_INTERVAL_MS);
+  wss.on('close', () => clearInterval(snapshotTimer));
+
+  // Graceful drain: stop accepting new joins, snapshot every active room, tell
+  // clients a refresh is coming, then hard-close after the grace window.
+  function shutdown(graceMs = 10_000) {
+    draining = true;
+    clearInterval(heartbeat);
+    clearInterval(snapshotTimer);
+    for (const room of manager.rooms.values()) {
+      try { snapshotStore.save(room.code, room.snapshot()); } catch {}
+    }
+    const notice = JSON.stringify({ t: 'draining', resumeIn: graceMs });
+    for (const ws of wss.clients) if (isOpen(ws)) ws.send(notice);
+    httpServer.close();
+    return new Promise((resolve) => setTimeout(() => {
+      for (const ws of wss.clients) ws.terminate();
+      resolve();
+    }, graceMs));
+  }
+
+  return { wss, shutdown };
 }
 
 // Ping every open socket so clients can reply with a pong; the sentAt stamp lets

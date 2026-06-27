@@ -1,5 +1,6 @@
 import { useGameSocket } from "@browser-games/game-client/useGameSocket";
 import { Lobby } from "@browser-games/game-client/Lobby";
+import { RefreshBanner } from "@browser-games/game-client/RefreshBanner";
 
 const SUIT_NAMES = { S: "Spades", H: "Hearts", D: "Diamonds", C: "Clubs" };
 const SUIT_SYMBOLS = { S: "♠", H: "♥", D: "♦", C: "♣" };
@@ -37,20 +38,24 @@ export function ShengJi() {
     lockRoom,
     send,
     restart,
+    needsRefresh,
   } = useGameSocket("sheng-ji");
 
   if (!room || !gameState) {
     return (
-      <Lobby
-        title="Sheng Ji (升级)"
-        rooms={rooms}
-        error={error}
-        onCreate={createRoom}
-        onJoin={joinRoom}
-        onQuickMatch={quickMatch}
-        onSpectate={spectate}
-        onRefresh={listRooms}
-      />
+      <>
+        <RefreshBanner needsRefresh={needsRefresh} />
+        <Lobby
+          title="Sheng Ji (升级)"
+          rooms={rooms}
+          error={error}
+          onCreate={createRoom}
+          onJoin={joinRoom}
+          onQuickMatch={quickMatch}
+          onSpectate={spectate}
+          onRefresh={listRooms}
+        />
+      </>
     );
   }
 
@@ -90,6 +95,7 @@ export function ShengJi() {
 
   return (
     <main className="sj">
+      <RefreshBanner needsRefresh={needsRefresh} />
       <p className="sj-back">
         <a href="/">← All games</a>
       </p>

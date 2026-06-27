@@ -51,6 +51,7 @@ export class Room {
     this._onGameEnd = onGameEnd;
     this.createdAt = Date.now();
     this.eventLog = [];
+    this._eventSeq = 0;
     this.phaseEnteredAt = null;
     this._onGameStart = onGameStart;
     this._gameStarted = false;
@@ -207,6 +208,10 @@ export class Room {
   // moves the game into a terminal state, fire onGameEnd exactly once for that
   // game (edge-triggered: a terminal state already recorded won't re-fire).
   applyMessage(playerId, msg, { now = Date.now() } = {}) {
+    if (this.adapter.anticheat) {
+      const reason = this.adapter.anticheat(this.state, playerId, msg);
+      if (reason) throw new Error(`anticheat: ${reason}`);
+    }
     const before = this._onGameEnd && this.adapter.getOutcome
       ? this.adapter.getOutcome(this.state)
       : null;
@@ -215,7 +220,7 @@ export class Room {
     const phaseAfter = this.state?.phase;
     if (phaseAfter !== phaseBefore) this.phaseEnteredAt = now;
     this._refreshTurnClock(now);
-    const entry = { seq: this.eventLog.length, ts: now, playerId, msg, stateHash: hashState(this.state) };
+    const entry = { seq: this._eventSeq++, ts: now, playerId, msg, stateHash: hashState(this.state) };
     if (this.eventLog.length >= MAX_EVENT_LOG) this.eventLog.shift();
     this.eventLog.push(entry);
     if (this._onGameEnd && this.adapter.getOutcome) {
@@ -306,6 +311,50 @@ export class Room {
     }
     return out;
   }
+
+  // Serializable snapshot of the room for the persistence seam. Live socket
+  // references are dropped; members keep only the durable seat/identity fields.
+  snapshot() {
+    return {
+      code: this.code,
+      gameId: this.gameId,
+      options: this.options,
+      state: this.state,
+      eventLog: this.eventLog,
+      _eventSeq: this._eventSeq,
+      host: this.host,
+      locked: this.locked,
+      turnStartedAt: this.turnStartedAt,
+      _lastActiveSeat: this._lastActiveSeat,
+      createdAt: this.createdAt,
+      phaseEnteredAt: this.phaseEnteredAt,
+      _gameStarted: this._gameStarted,
+      members: [...this.members.entries()].map(([id, m]) => ({ id, seat: m.seat, isBot: m.isBot })),
+    };
+  }
+
+  // Rebuild a Room from a snapshot. Engine state is restored verbatim; members
+  // come back without sockets (humans must reconnect, which restores client refs).
+  static fromSnapshot(snap, adapter, onGameEnd, onGameStart) {
+    const room = new Room(snap.code, adapter, onGameEnd, snap.options, onGameStart);
+    room.state = snap.state;
+    room.eventLog = snap.eventLog ?? [];
+    room._eventSeq = snap._eventSeq ?? room.eventLog.length;
+    room.host = snap.host;
+    room.locked = snap.locked;
+    room.turnStartedAt = snap.turnStartedAt;
+    room._lastActiveSeat = snap._lastActiveSeat;
+    room.createdAt = snap.createdAt;
+    room.phaseEnteredAt = snap.phaseEnteredAt;
+    room._gameStarted = snap._gameStarted;
+    for (const m of snap.members ?? []) {
+      room.members.set(m.id, {
+        id: m.id, seat: m.seat, isBot: m.isBot,
+        client: null, isSpectator: false, lastPong: Date.now(), latencyMs: 0,
+      });
+    }
+    return room;
+  }
 }
 
 export class RoomManager {
@@ -319,6 +368,7 @@ export class RoomManager {
   createRoom(gameId, options = {}) {
     const adapter = this.adapters[gameId];
     if (!adapter) throw new Error(`unknown game: ${gameId}`);
+    if (adapter.enabled === false) throw new Error(`game ${gameId} is disabled`);
     const code = makeCode(this.rooms);
     const cb = this._onGameEnd
       ? (outcome) => this._onGameEnd(outcome, { gameId, roomCode: code })
@@ -336,6 +386,22 @@ export class RoomManager {
     const room = this.rooms.get(code);
     if (!room) throw new Error('room not found');
     return room;
+  }
+
+  // Re-seat a room from a persisted snapshot on startup. Skips unknown or
+  // now-disabled games rather than reviving a room nobody can join.
+  restoreRoom(snap) {
+    const adapter = this.adapters[snap.gameId];
+    if (!adapter || adapter.enabled === false) return;
+    const cb = this._onGameEnd
+      ? (outcome) => this._onGameEnd(outcome, { gameId: snap.gameId, roomCode: snap.code })
+      : undefined;
+    const startCb = this._onGameStart
+      ? () => this._onGameStart({ gameId: snap.gameId, roomCode: snap.code })
+      : undefined;
+    const room = Room.fromSnapshot(snap, adapter, cb, startCb);
+    room.gameId = snap.gameId;
+    this.rooms.set(snap.code, room);
   }
 
   // Open rooms (not full, not locked) for a given game, for the lobby list.

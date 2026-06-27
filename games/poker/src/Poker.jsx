@@ -1,6 +1,7 @@
 import { useGameSocket } from "@browser-games/game-client/useGameSocket";
 import { Lobby } from "@browser-games/game-client/Lobby";
 import { ConnectionBanner } from "@browser-games/game-client/ConnectionBanner";
+import { RefreshBanner } from "@browser-games/game-client/RefreshBanner";
 import { PlayerList } from "@browser-games/game-client/PlayerList";
 import { RoomCode } from "@browser-games/game-client/RoomCode";
 import { Chat } from "@browser-games/game-client/Chat";
@@ -27,22 +28,26 @@ export function Poker() {
     startEarly,
     send,
     restart,
+    needsRefresh,
   } = useGameSocket("poker");
 
   useYourTurn(gameState, room?.seat);
 
   if (!room || !gameState) {
     return (
-      <Lobby
-        title="Texas Hold'em"
-        rooms={rooms}
-        error={error}
-        onCreate={createRoom}
-        onJoin={joinRoom}
-        onQuickMatch={quickMatch}
-        onSpectate={spectate}
-        onRefresh={listRooms}
-      />
+      <>
+        <RefreshBanner needsRefresh={needsRefresh} />
+        <Lobby
+          title="Texas Hold'em"
+          rooms={rooms}
+          error={error}
+          onCreate={createRoom}
+          onJoin={joinRoom}
+          onQuickMatch={quickMatch}
+          onSpectate={spectate}
+          onRefresh={listRooms}
+        />
+      </>
     );
   }
 
@@ -70,6 +75,7 @@ export function Poker() {
 
   return (
     <main className="poker">
+      <RefreshBanner needsRefresh={needsRefresh} />
       <ConnectionBanner connectionStatus={connectionStatus} />
       <p className="poker-back">
         <a href="/">← All games</a>

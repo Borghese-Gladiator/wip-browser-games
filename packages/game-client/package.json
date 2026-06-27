@@ -17,6 +17,7 @@
     "./useYourTurn": "./src/useYourTurn.js",
     "./useOptimistic": "./src/useOptimistic.js",
     "./ConnectionBanner": "./src/ConnectionBanner.jsx",
+    "./RefreshBanner": "./src/RefreshBanner.jsx",
     "./PlayerList": "./src/PlayerList.jsx",
     "./PlayerName": "./src/PlayerName.jsx",
     "./RoomCode": "./src/RoomCode.jsx",

@@ -3,7 +3,7 @@
 // synchronously alongside the server. The pure aggregation over these records
 // lives in @portal/shared/leaderboard; this module is only I/O + dedup.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs';
 import crypto from 'node:crypto';
 
 function load(filePath, fallback) {
@@ -55,5 +55,36 @@ export class AchievementStore {
 
   forPlayer(playerId) {
     return this.unlocks.filter((u) => u.playerId === playerId);
+  }
+}
+
+// Per-room state snapshots, one JSON file per room code. The persistence seam
+// that lets a restart resume in-flight rooms instead of discarding them.
+export class SnapshotStore {
+  constructor(dir = './snapshots') {
+    this.dir = dir;
+    mkdirSync(dir, { recursive: true });
+  }
+
+  save(code, snapshot) {
+    writeFileSync(`${this.dir}/${code}.json`, JSON.stringify(snapshot));
+  }
+
+  load(code) {
+    return JSON.parse(readFileSync(`${this.dir}/${code}.json`, 'utf8'));
+  }
+
+  list() {
+    try {
+      return readdirSync(this.dir).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5));
+    } catch {
+      return [];
+    }
+  }
+
+  delete(code) {
+    try {
+      unlinkSync(`${this.dir}/${code}.json`);
+    } catch {}
   }
 }

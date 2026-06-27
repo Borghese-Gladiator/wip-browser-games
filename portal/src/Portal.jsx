@@ -8,7 +8,7 @@ export function Portal() {
         <p className="portal-subtitle">Pick a game to play.</p>
       </header>
       <ul className="game-grid">
-        {games.map((game) => (
+        {games.filter((g) => g.enabled !== false).map((game) => (
           <li key={game.id}>
             <a className="game-card" href={game.path}>
               <span className="game-emoji" aria-hidden="true">
