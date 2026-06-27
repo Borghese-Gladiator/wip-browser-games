@@ -218,4 +218,22 @@ describe('runHeartbeat', () => {
     runHeartbeat(m, () => {}, { deadAfterMs: 100, graceMs: 50, forfeitMs: 1000 }, 5000);
     expect(m.rooms.size).toBe(0);
   });
+
+  it('does not propagate an engine exception from a timeout action', () => {
+    const throwingAdapter = {
+      ...turnAdapter,
+      onMessage: () => { throw new Error('engine boom'); },
+    };
+    const m = new RoomManager({ test: throwingAdapter });
+    const room = m.createRoom('test');
+    room.addPlayer('h', 'Host', { readyState: 1, send: () => {} }, { now: 0 });
+    room.addPlayer('g', 'Guest', { readyState: 1, send: () => {} }, { now: 0 });
+    room.state.turn = 0;
+    room.turnStartedAt = 0;
+    room.recordPong('g', { now: 9000 });
+
+    expect(() =>
+      runHeartbeat(m, () => {}, { deadAfterMs: 100000, graceMs: 1000, forfeitMs: 60000 }, 9000),
+    ).not.toThrow();
+  });
 });

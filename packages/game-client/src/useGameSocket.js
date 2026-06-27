@@ -74,7 +74,20 @@ export function useGameSocket(gameId) {
           break;
       }
     };
+    function handleClientError(event) {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          t: "client:error",
+          message: String(event.message || event.reason || "").slice(0, 500),
+          stack: event.error?.stack?.slice(0, 2000),
+        }));
+      }
+    }
+    window.addEventListener("error", handleClientError);
+    window.addEventListener("unhandledrejection", handleClientError);
     return () => {
+      window.removeEventListener("error", handleClientError);
+      window.removeEventListener("unhandledrejection", handleClientError);
       clearTimeout(reconnectTimer.current);
       socket.close();
     };

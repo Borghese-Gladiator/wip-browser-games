@@ -38,6 +38,8 @@ import {
   headToHead,
   checkAchievements,
 } from '@portal/shared/leaderboard';
+import { log } from './logger.js';
+import { isSlowGame, rollupMessagesPerSec } from '@portal/shared/metrics';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function isValidUUID(s) {
@@ -54,6 +56,24 @@ const HEARTBEAT = {
   GRACE_MS: 10000,
   FORFEIT_MS: 60000,
 };
+
+const ADMIN_HTML = `<!DOCTYPE html><html><head><title>Game Admin</title><meta charset="utf-8">
+<style>body{font-family:monospace;padding:1rem}table{border-collapse:collapse;width:100%}
+th,td{border:1px solid #ccc;padding:.4rem .8rem;text-align:left}th{background:#f0f0f0}
+.slow{color:red;font-weight:bold}</style></head><body>
+<h1>Live Ops</h1><div id="s"></div><h2>Active Rooms</h2>
+<table id="t"><thead><tr><th>Code</th><th>Game</th><th>Members</th><th>Spec</th>
+<th>Phase</th><th>Age</th><th>Avg ms</th><th>Events</th><th>Slow?</th></tr></thead>
+<tbody></tbody></table>
+<script>async function r(){const d=await fetch('/stats').then(r=>r.json());
+document.getElementById('s').textContent='Connections: '+d.activeConnections+
+' | msg/s: '+d.messagesPerSec+' | Created: '+d.roomsCreated+' | Finished: '+d.roomsFinished;
+document.querySelector('#t tbody').innerHTML=d.rooms.map(r=>
+'<tr><td>'+r.code+'</td><td>'+r.gameId+'</td><td>'+r.memberCount+'</td><td>'+
+r.spectatorCount+'</td><td>'+(r.phase||'-')+'</td><td>'+Math.round(r.ageMs/1000)+
+'s</td><td>'+r.avgLatencyMs+'</td><td>'+r.eventLogSize+'</td><td class="'+
+(r.slowGame?'slow':'')+'">'+( r.slowGame?'YES':'')+'</td></tr>').join('')}
+r();setInterval(r,3000)</script></body></html>`;
 
 // Per-connection session. Tracks which room (if any) this socket is in and
 // whether it's a spectator. The playerId is supplied by the client (localStorage
@@ -121,7 +141,7 @@ function broadcastChat(room, msg) {
 
 // Core dispatch. Pure-ish: depends only on the manager and the session. Exported
 // for tests. Returns nothing; effects happen via session.send / broadcastRoom.
-export function handleMessage(manager, session, msg) {
+export function handleMessage(manager, session, msg, logger = null) {
   try {
     switch (msg.t) {
       case 'lobby:list': {
@@ -195,10 +215,23 @@ export function handleMessage(manager, session, msg) {
         broadcastChat(room, { t: 'chat', from: session.playerId, name, text, ts: Date.now() });
         return;
       }
+      case 'client:error': {
+        const ctx = { playerId: session.playerId };
+        if (session.room) { ctx.roomId = session.room.code; ctx.gameId = session.room.gameId; }
+        (logger ?? log).error('client error', {
+          ...ctx,
+          message: String(msg.message ?? '').slice(0, 500),
+          stack: String(msg.stack ?? '').slice(0, 2000),
+        });
+        return;
+      }
       default:
         throw new Error(`unknown message: ${msg.t}`);
     }
   } catch (e) {
+    const ctx = { playerId: session.playerId };
+    if (session.room) { ctx.roomId = session.room.code; ctx.gameId = session.room.gameId; }
+    (logger ?? log).error('message handling failed', { ...ctx, err: e.message });
     session.send({ t: 'error', message: e.message });
   }
 }
@@ -231,11 +264,24 @@ export function createGateway({
   const outcomeStore = new OutcomeStore(outcomesPath);
   const achievementStore = new AchievementStore(achievementsPath);
 
+  const funnel = {};
+  function getFunnel(gid) {
+    if (!funnel[gid]) funnel[gid] = { lobbyViews: 0, roomsCreated: 0, gamesStarted: 0, gamesFinished: 0 };
+    return funnel[gid];
+  }
+  let totalRoomsCreated = 0;
+  let totalRoomsFinished = 0;
+  let msgCount = 0;
+  let msgWindowStart = Date.now();
+
   // The single framework-side hook every game flows through when it ends. The
   // adapter declared the scoring (outcome) and any achievement predicates; here
   // we persist the outcome and record newly-unlocked achievements per player.
   function onGameEnd(outcome, { gameId, roomCode }) {
     const record = outcomeStore.record({ gameId, roomCode, outcomes: outcome.outcomes });
+    getFunnel(gameId).gamesFinished++;
+    totalRoomsFinished++;
+    log.info('game ended', { gameId, roomCode });
     const achievements = adapters[gameId]?.achievements ?? [];
     if (achievements.length === 0) return;
     for (const { playerId } of outcome.outcomes) {
@@ -248,13 +294,70 @@ export function createGateway({
     }
   }
 
-  if (!manager) manager = new RoomManager(adapters, { onGameEnd });
+  function onGameStart({ gameId, roomCode }) {
+    getFunnel(gameId).gamesStarted++;
+    log.info('game started', { gameId, roomCode });
+  }
+
+  if (!manager) manager = new RoomManager(adapters, { onGameEnd, onGameStart });
 
   // Read-only HTTP surface for leaderboards / history / head-to-head, served on
   // the same port as the WebSocket gateway. All views derive from outcomeStore.
   function handleHttp(req, res) {
     const url = new URL(req.url, 'http://localhost');
     res.setHeader('Access-Control-Allow-Origin', '*');
+
+    if (url.pathname === '/admin') {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.end(ADMIN_HTML);
+      return;
+    }
+
+    if (url.pathname === '/stats') {
+      res.setHeader('Content-Type', 'application/json');
+      const now = Date.now();
+      const mps = rollupMessagesPerSec(msgCount, now - msgWindowStart);
+      msgCount = 0;
+      msgWindowStart = now;
+      let seated = 0, spectating = 0;
+      const roomsByGame = {};
+      const roomList = [];
+      for (const room of manager.rooms.values()) {
+        const gid = room.gameId;
+        roomsByGame[gid] = (roomsByGame[gid] ?? 0) + 1;
+        seated += room.members.size;
+        spectating += room.spectators.size;
+        let totalLat = 0, latCount = 0;
+        for (const m of room.members.values()) {
+          if (!m.isBot) { totalLat += m.latencyMs; latCount++; }
+        }
+        roomList.push({
+          code: room.code,
+          gameId: gid,
+          memberCount: room.members.size,
+          spectatorCount: room.spectators.size,
+          phase: room.state?.phase ?? null,
+          ageMs: now - room.createdAt,
+          avgLatencyMs: latCount > 0 ? Math.round(totalLat / latCount) : 0,
+          slowGame: isSlowGame(room.phaseEnteredAt, now),
+          eventLogSize: room.eventLog.length,
+          lastEvent: room.eventLog[room.eventLog.length - 1] ?? null,
+        });
+      }
+      res.end(JSON.stringify({
+        activeConnections: wss.clients.size,
+        roomsByGame,
+        seated,
+        spectating,
+        messagesPerSec: mps,
+        roomsCreated: totalRoomsCreated,
+        roomsFinished: totalRoomsFinished,
+        funnelByGame: funnel,
+        rooms: roomList,
+      }));
+      return;
+    }
+
     res.setHeader('Content-Type', 'application/json');
     const records = outcomeStore.all();
     if (url.pathname === '/api/leaderboard') {
@@ -297,7 +400,19 @@ export function createGateway({
       } catch {
         return;
       }
-      handleMessage(manager, session, msg);
+      // Funnel and message-rate accounting happen here so handleMessage stays stateless.
+      if (msg.t === 'game' || msg.t === 'restart') msgCount++;
+      if (msg.t === 'lobby:list' && msg.gameId) getFunnel(msg.gameId).lobbyViews++;
+      if (msg.t === 'lobby:create' || msg.t === 'lobby:quickmatch') {
+        const prevSize = manager.rooms.size;
+        handleMessage(manager, session, msg, log);
+        if (manager.rooms.size > prevSize && msg.gameId) {
+          getFunnel(msg.gameId).roomsCreated++;
+          totalRoomsCreated++;
+        }
+        return;
+      }
+      handleMessage(manager, session, msg, log);
     });
     ws.on('close', () => leave(manager, session));
     ws.on('error', () => leave(manager, session));
@@ -334,16 +449,24 @@ export function runHeartbeat(manager, broadcast, opts, now = Date.now()) {
     if (botMsg) {
       const botId = room.state.players[botSeat]?.id;
       if (botId) {
-        room.applyMessage(botId, botMsg, { now });
-        changed = true;
+        try {
+          room.applyMessage(botId, botMsg, { now });
+          changed = true;
+        } catch (e) {
+          log.error('bot move failed', { roomId: room.code, gameId: room.gameId, err: e.message });
+        }
       }
     } else if (timeout) {
       // Auto-act for the dark/idle seat so the game cannot stall. The engine
       // attributes the action to that seat's playerId.
       const playerId = room.state.players[timeout.seat]?.id;
       if (playerId) {
-        room.applyMessage(playerId, timeout.msg, { now });
-        changed = true;
+        try {
+          room.applyMessage(playerId, timeout.msg, { now });
+          changed = true;
+        } catch (e) {
+          log.error('timeout action failed', { roomId: room.code, gameId: room.gameId, err: e.message });
+        }
       }
     }
 

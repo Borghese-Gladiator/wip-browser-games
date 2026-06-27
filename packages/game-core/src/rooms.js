@@ -11,8 +11,10 @@ import { makeBot, botActionFor } from './bots.js';
 import { decideTimeout } from './timers.js';
 import { validateOptions } from './options.js';
 import { pickQuickMatchRoom } from './matchmaking.js';
+import { hashState } from './observability.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1 ambiguity
+const MAX_EVENT_LOG = 200;
 
 function makeCode(taken) {
   for (;;) {
@@ -34,7 +36,7 @@ function makeCode(taken) {
 export class Room {
   // onGameEnd (optional): called with the adapter's outcome when a message
   // transitions the game into a terminal state. Wired by RoomManager.
-  constructor(code, adapter, onGameEnd, options = {}) {
+  constructor(code, adapter, onGameEnd, options = {}, onGameStart = null) {
     this.code = code;
     this.adapter = adapter;
     this.options = validateOptions(adapter.optionsSchema, options);
@@ -47,6 +49,11 @@ export class Room {
     this.turnStartedAt = null; // ms timestamp the current active seat began
     this._lastActiveSeat = null;
     this._onGameEnd = onGameEnd;
+    this.createdAt = Date.now();
+    this.eventLog = [];
+    this.phaseEnteredAt = null;
+    this._onGameStart = onGameStart;
+    this._gameStarted = false;
   }
 
   get playerCount() {
@@ -165,8 +172,7 @@ export class Room {
       throw new Error('not enough players to start');
     }
     this.fillWithBots();
-    const started = this.adapter.autoStart?.(this.state);
-    if (started) this.state = started;
+    this._maybeAutoStart();
   }
 
   _assertHost(requesterId) {
@@ -175,7 +181,14 @@ export class Room {
 
   _maybeAutoStart() {
     const started = this.adapter.autoStart?.(this.state);
-    if (started) this.state = started;
+    if (started) {
+      this.state = started;
+      this.phaseEnteredAt = Date.now();
+      if (!this._gameStarted && this._onGameStart) {
+        this._gameStarted = true;
+        this._onGameStart();
+      }
+    }
   }
 
   // Only bots and spectators left → no live human; the room can be reaped.
@@ -197,8 +210,14 @@ export class Room {
     const before = this._onGameEnd && this.adapter.getOutcome
       ? this.adapter.getOutcome(this.state)
       : null;
+    const phaseBefore = this.state?.phase;
     this.state = this.adapter.onMessage(this.state, playerId, msg);
+    const phaseAfter = this.state?.phase;
+    if (phaseAfter !== phaseBefore) this.phaseEnteredAt = now;
     this._refreshTurnClock(now);
+    const entry = { seq: this.eventLog.length, ts: now, playerId, msg, stateHash: hashState(this.state) };
+    if (this.eventLog.length >= MAX_EVENT_LOG) this.eventLog.shift();
+    this.eventLog.push(entry);
     if (this._onGameEnd && this.adapter.getOutcome) {
       const after = this.adapter.getOutcome(this.state);
       if (after && !before) this._onGameEnd(after);
@@ -290,10 +309,11 @@ export class Room {
 }
 
 export class RoomManager {
-  constructor(adapters, { onGameEnd } = {}) {
+  constructor(adapters, { onGameEnd, onGameStart } = {}) {
     this.adapters = adapters; // gameId -> adapter
     this.rooms = new Map(); // code -> Room
     this._onGameEnd = onGameEnd; // (outcome, { gameId, roomCode }) => void
+    this._onGameStart = onGameStart; // ({ gameId, roomCode }) => void
   }
 
   createRoom(gameId, options = {}) {
@@ -303,7 +323,10 @@ export class RoomManager {
     const cb = this._onGameEnd
       ? (outcome) => this._onGameEnd(outcome, { gameId, roomCode: code })
       : undefined;
-    const room = new Room(code, adapter, cb, options);
+    const startCb = this._onGameStart
+      ? () => this._onGameStart({ gameId, roomCode: code })
+      : undefined;
+    const room = new Room(code, adapter, cb, options, startCb);
     room.gameId = gameId;
     this.rooms.set(code, room);
     return room;

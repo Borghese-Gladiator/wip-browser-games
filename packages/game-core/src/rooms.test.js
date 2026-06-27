@@ -304,3 +304,41 @@ describe('RoomManager quick-match & GC', () => {
     expect(m.rooms.size).toBe(0);
   });
 });
+
+describe('Room event log', () => {
+  it('applyMessage appends an entry with stateHash, seq, playerId, msg', () => {
+    const room = mgr().createRoom('test');
+    room.addPlayer('h', 'Host', {});
+    room.addPlayer('g', 'Guest', {});
+    room.applyMessage('h', { skip: 0 });
+    expect(room.eventLog).toHaveLength(1);
+    const e = room.eventLog[0];
+    expect(e.seq).toBe(0);
+    expect(e.playerId).toBe('h');
+    expect(e.msg).toEqual({ skip: 0 });
+    expect(typeof e.stateHash).toBe('string');
+    expect(e.stateHash).toHaveLength(16);
+  });
+
+  it('ring buffer caps at 200 entries', () => {
+    const room = mgr().createRoom('test');
+    room.addPlayer('h', 'Host', {});
+    room.addPlayer('g', 'Guest', {});
+    for (let i = 0; i < 201; i++) room.applyMessage('h', { skip: i });
+    expect(room.eventLog).toHaveLength(200);
+    expect(room.eventLog[0].msg).toEqual({ skip: 1 }); // oldest dropped
+  });
+
+  it('phaseEnteredAt is set when state.phase changes', () => {
+    const phaseAdapter = makeAdapter({
+      onMessage: (state, _pid, msg) => ({ ...state, phase: msg.phase }),
+    });
+    const m = new RoomManager({ test: phaseAdapter });
+    const room = m.createRoom('test');
+    room.addPlayer('h', 'Host', {});
+    room.addPlayer('g', 'Guest', {});
+    expect(room.phaseEnteredAt).toBeNull();
+    room.applyMessage('h', { phase: 'active' });
+    expect(room.phaseEnteredAt).toBeGreaterThan(0);
+  });
+});
