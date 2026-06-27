@@ -8,7 +8,8 @@
     "./Lobby": "./src/Lobby.jsx",
     "./lobby.css": "./src/lobby.css",
     "./useIdentity": "./src/useIdentity.js",
-    "./PlayerCodeModal": "./src/PlayerCodeModal.jsx"
+    "./PlayerCodeModal": "./src/PlayerCodeModal.jsx",
+    "./leaderboard": "./src/leaderboard.js"
   },
   "dependencies": {
     "@portal/shared": "*"

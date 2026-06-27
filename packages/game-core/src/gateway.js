@@ -19,10 +19,18 @@
 // tested with a fake client (anything with .send()).
 
 import crypto from 'node:crypto';
+import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { RoomManager } from './rooms.js';
 import { adapters } from './games.js';
+import { OutcomeStore, AchievementStore } from './store.js';
 import { sanitizeName } from '@portal/shared/sanitize';
+import {
+  computeBoard,
+  matchHistory,
+  headToHead,
+  checkAchievements,
+} from '@portal/shared/leaderboard';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function isValidUUID(s) {
@@ -99,8 +107,67 @@ function joinRoom(room, session, name) {
   broadcastRoom(room);
 }
 
-export function createGateway({ port = 3001, manager = new RoomManager(adapters) } = {}) {
-  const wss = new WebSocketServer({ port });
+export function createGateway({
+  port = 3001,
+  outcomesPath = './outcomes.json',
+  achievementsPath = './achievements.json',
+  manager,
+} = {}) {
+  const outcomeStore = new OutcomeStore(outcomesPath);
+  const achievementStore = new AchievementStore(achievementsPath);
+
+  // The single framework-side hook every game flows through when it ends. The
+  // adapter declared the scoring (outcome) and any achievement predicates; here
+  // we persist the outcome and record newly-unlocked achievements per player.
+  function onGameEnd(outcome, { gameId, roomCode }) {
+    const record = outcomeStore.record({ gameId, roomCode, outcomes: outcome.outcomes });
+    const achievements = adapters[gameId]?.achievements ?? [];
+    if (achievements.length === 0) return;
+    for (const { playerId } of outcome.outcomes) {
+      const playerRecords = outcomeStore
+        .all()
+        .filter((r) => r.outcomes.some((o) => o.playerId === playerId));
+      for (const achievementId of checkAchievements(achievements, playerId, record, playerRecords)) {
+        achievementStore.record({ playerId, achievementId, gameId });
+      }
+    }
+  }
+
+  if (!manager) manager = new RoomManager(adapters, { onGameEnd });
+
+  // Read-only HTTP surface for leaderboards / history / head-to-head, served on
+  // the same port as the WebSocket gateway. All views derive from outcomeStore.
+  function handleHttp(req, res) {
+    const url = new URL(req.url, 'http://localhost');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    const records = outcomeStore.all();
+    if (url.pathname === '/api/leaderboard') {
+      const entries = computeBoard(records, {
+        gameId: url.searchParams.get('gameId') || undefined,
+        roomCode: url.searchParams.get('roomCode') || undefined,
+        window: url.searchParams.get('window') || 'all-time',
+      });
+      res.end(JSON.stringify({ entries }));
+    } else if (url.pathname === '/api/history') {
+      const playerId = url.searchParams.get('playerId');
+      res.end(JSON.stringify({ games: matchHistory(records, playerId) }));
+    } else if (url.pathname === '/api/h2h') {
+      const stats = headToHead(
+        records,
+        url.searchParams.get('playerA'),
+        url.searchParams.get('playerB'),
+      );
+      res.end(JSON.stringify(stats));
+    } else {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: 'not found' }));
+    }
+  }
+
+  const httpServer = createServer(handleHttp);
+  const wss = new WebSocketServer({ server: httpServer });
+  httpServer.listen(port);
   console.log(`Game gateway listening on :${port}`);
 
   wss.on('connection', (ws, req) => {

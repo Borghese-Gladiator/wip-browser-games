@@ -19,11 +19,14 @@ function makeCode(taken) {
 // One game table. `adapter` is the per-game contract (see games.js); `state` is
 // whatever the engine's createGame() returned.
 export class Room {
-  constructor(code, adapter) {
+  // onGameEnd (optional): called with the adapter's outcome when a message
+  // transitions the game into a terminal state. Wired by RoomManager.
+  constructor(code, adapter, onGameEnd) {
     this.code = code;
     this.adapter = adapter;
     this.state = adapter.engine.createGame();
     this.members = new Map(); // playerId -> { id, seat, client }
+    this._onGameEnd = onGameEnd;
   }
 
   get playerCount() {
@@ -60,9 +63,18 @@ export class Room {
     return this.members.size === 0;
   }
 
-  // Route a game message through the adapter, mutating room state.
+  // Route a game message through the adapter, mutating room state. When a message
+  // moves the game into a terminal state, fire onGameEnd exactly once for that
+  // game (edge-triggered: a terminal state already recorded won't re-fire).
   applyMessage(playerId, msg) {
+    const before = this._onGameEnd && this.adapter.getOutcome
+      ? this.adapter.getOutcome(this.state)
+      : null;
     this.state = this.adapter.onMessage(this.state, playerId, msg);
+    if (this._onGameEnd && this.adapter.getOutcome) {
+      const after = this.adapter.getOutcome(this.state);
+      if (after && !before) this._onGameEnd(after);
+    }
   }
 
   // Per-seat public view for a member.
@@ -74,16 +86,20 @@ export class Room {
 }
 
 export class RoomManager {
-  constructor(adapters) {
+  constructor(adapters, { onGameEnd } = {}) {
     this.adapters = adapters; // gameId -> adapter
     this.rooms = new Map(); // code -> Room
+    this._onGameEnd = onGameEnd; // (outcome, { gameId, roomCode }) => void
   }
 
   createRoom(gameId) {
     const adapter = this.adapters[gameId];
     if (!adapter) throw new Error(`unknown game: ${gameId}`);
     const code = makeCode(this.rooms);
-    const room = new Room(code, adapter);
+    const cb = this._onGameEnd
+      ? (outcome) => this._onGameEnd(outcome, { gameId, roomCode: code })
+      : undefined;
+    const room = new Room(code, adapter, cb);
     room.gameId = gameId;
     this.rooms.set(code, room);
     return room;

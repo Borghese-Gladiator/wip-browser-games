@@ -8,6 +8,7 @@
     "./registry": "./src/registry.js",
     "./theme.css": "./src/theme.css",
     "./identity": "./src/identity.js",
-    "./sanitize": "./src/sanitize.js"
+    "./sanitize": "./src/sanitize.js",
+    "./leaderboard": "./src/leaderboard.js"
   }
 }

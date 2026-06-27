@@ -4,3 +4,7 @@ dist/
 *.log
 .DS_Store
 e2e/artifacts/
+
+# Gateway leaderboard/stats persistence (generated at runtime).
+outcomes.json
+achievements.json
