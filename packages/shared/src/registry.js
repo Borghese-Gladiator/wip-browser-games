@@ -19,6 +19,15 @@ export const games = [
     enabled: true,
   },
   {
+    id: "fps",
+    title: "DOOM-style FPS",
+    description: "Single-player 3D shooter. Survive waves of demons. WASD to move, click to fire.",
+    emoji: "🔫",
+    path: "/games/fps/",
+    multiplayer: false,
+    enabled: true,
+  },
+  {
     id: "poker",
     title: "Texas Hold'em",
     description: "4-player online poker. Create a room and share the code.",

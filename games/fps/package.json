@@ -1,0 +1,13 @@
+{
+  "name": "@portal/game-fps",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "@portal/shared": "*",
+    "three": "^0.182.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.182.0"
+  }
+}
