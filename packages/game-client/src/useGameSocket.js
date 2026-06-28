@@ -27,6 +27,14 @@ export function useGameSocket(gameId) {
   const ws = useRef(null);
   const reconnectAttempt = useRef(0);
   const reconnectTimer = useRef(null);
+  // The last room we successfully joined, so a fresh socket (StrictMode remount
+  // or auto-reconnect) can re-bind its server-side session to our held seat. The
+  // server keys the seat by playerId, so replaying the join is idempotent.
+  const joinIntent = useRef(null);
+  // Name used to enter a room. For create/quickmatch the room code is
+  // server-assigned and only known once `joined` arrives, so we stash the name
+  // here and finalize joinIntent there.
+  const pendingName = useRef(null);
 
   const connected = connectionStatus === "connected";
 
@@ -36,8 +44,22 @@ export function useGameSocket(gameId) {
     socket.onopen = () => {
       setConnectionStatus("connected");
       reconnectAttempt.current = 0;
+      // Re-establish room membership on the new connection. A reconnect (network
+      // drop, or the StrictMode mount/cleanup/mount cycle in dev) lands on a
+      // fresh server-side session with no room, so every game message would be
+      // rejected with "not in a room" until we replay the join. The server keys
+      // the seat by playerId, so replaying is an idempotent reconnect.
+      const intent = joinIntent.current;
+      if (intent) socket.send(JSON.stringify(intent));
     };
     socket.onclose = () => {
+      // Ignore closes from a socket we've already superseded. The StrictMode
+      // mount/cleanup/mount cycle (and a fast reconnect) closes the prior socket
+      // after a newer one is live; reconnecting off that stale close would spawn
+      // an orphan connection whose session never rejoins, producing a roomless
+      // socket that gets "not in a room" on every action. A genuine drop closes
+      // the *current* socket, so ws.current === socket and we still reconnect.
+      if (ws.current !== socket) return;
       if (shouldReconnect(reconnectAttempt.current)) {
         setConnectionStatus("reconnecting");
         reconnectTimer.current = setTimeout(
@@ -60,6 +82,13 @@ export function useGameSocket(gameId) {
         case "joined":
           setError("");
           setRoom({ code: msg.code, seat: msg.seat, isHost: msg.isHost, options: msg.options });
+          // Record how to re-enter this exact room on a reconnect. Spectators
+          // set their intent at request time (handled in spectate()); a seated
+          // player replays a join by the now-known code, which the server treats
+          // as a reconnect and restores the held seat.
+          if (msg.seat !== -1 && pendingName.current != null) {
+            joinIntent.current = { t: "lobby:join", gameId, code: msg.code, name: pendingName.current };
+          }
           break;
         case "state":
           setError("");
@@ -106,21 +135,33 @@ export function useGameSocket(gameId) {
     [rawSend, gameId],
   );
   const createRoom = useCallback(
-    (name, options) => rawSend({ t: "lobby:create", gameId, name, options }),
+    (name, options) => {
+      pendingName.current = name;
+      rawSend({ t: "lobby:create", gameId, name, options });
+    },
     [rawSend, gameId],
   );
   const joinRoom = useCallback(
-    (code, name) => rawSend({ t: "lobby:join", gameId, code, name }),
+    (code, name) => {
+      pendingName.current = name;
+      rawSend({ t: "lobby:join", gameId, code, name });
+    },
     [rawSend, gameId],
   );
   // Quick-match: drop into any open room or create one, filling with bots so a
   // quiet lobby is still playable.
   const quickMatch = useCallback(
-    (name, options) => rawSend({ t: "lobby:quickmatch", gameId, name, options }),
+    (name, options) => {
+      pendingName.current = name;
+      rawSend({ t: "lobby:quickmatch", gameId, name, options });
+    },
     [rawSend, gameId],
   );
   const spectate = useCallback(
-    (code) => rawSend({ t: "lobby:spectate", gameId, code }),
+    (code) => {
+      joinIntent.current = { t: "lobby:spectate", gameId, code };
+      rawSend({ t: "lobby:spectate", gameId, code });
+    },
     [rawSend, gameId],
   );
 

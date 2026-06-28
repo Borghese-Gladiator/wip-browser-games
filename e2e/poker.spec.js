@@ -31,7 +31,7 @@ test("4-player Texas Hold'em plays a full hand to showdown", async ({ browser })
 
   // The host's view shows "Room: <CODE>" once seated; share it with guests.
   const roomText = await host.getByText(/^Room: /).textContent();
-  const code = roomText.replace("Room:", "").trim();
+  const code = roomText.replace("Room:", "").replace(/Copy.*/i, "").trim();
 
   for (const [i, page] of guests.entries()) {
     await page.getByLabel("Your name").fill(`Player${i + 2}`);

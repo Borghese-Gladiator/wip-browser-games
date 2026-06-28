@@ -28,7 +28,7 @@ test("active game is visible via /stats and the admin page with an event-log sta
   await host.getByRole("button", { name: "Create room" }).click();
 
   const roomText = await host.getByText(/^Room: /).textContent();
-  const code = roomText.replace("Room:", "").trim();
+  const code = roomText.replace("Room:", "").replace(/Copy.*/i, "").trim();
 
   for (const [i, page] of guests.entries()) {
     await page.getByLabel("Your name").fill(`Player${i + 2}`);

@@ -181,14 +181,18 @@ export class Room {
   }
 
   _maybeAutoStart() {
+    // Idempotent: once the game has started, don't ask the adapter to start
+    // again. autoStart calls the engine's start (e.g. poker.startHand), which
+    // throws "hand in progress" mid-hand. startEarly fills with bots — the last
+    // seat already auto-starts — so a second call here would otherwise throw and
+    // abort the host:start handler before it can broadcast the started state.
+    if (this._gameStarted) return;
     const started = this.adapter.autoStart?.(this.state);
     if (started) {
       this.state = started;
       this.phaseEnteredAt = Date.now();
-      if (!this._gameStarted && this._onGameStart) {
-        this._gameStarted = true;
-        this._onGameStart();
-      }
+      if (this._onGameStart) this._onGameStart();
+      this._gameStarted = true;
     }
   }
 
