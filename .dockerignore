@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.github
+e2e
+*.log
+.DS_Store
+.playwright-mcp
+outcomes.json
+achievements.json
+snapshots
+plan.md
+docs

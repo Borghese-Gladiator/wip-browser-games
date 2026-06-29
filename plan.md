@@ -103,3 +103,32 @@ Fix one correctness blocker and add baseline polish so the repo is closer to dep
 ### Manual (browser)
 - `npm run build` succeeds; `dist/favicon.svg` present and referenced.
 - `npm run preview`; load portal + each game, confirm favicon in tab, titles unchanged.
+
+---
+
+# Plan: Single-deployment Docker (gateway serves the built client)
+
+## Brief
+Ship as one deployable unit: one Node container that both serves the static
+`dist/` client and runs the WebSocket gateway on the same port. This removes the
+cross-origin `VITE_GATEWAY_URL` problem — the browser connects back to the same
+host it loaded from.
+
+## Changes
+1. `packages/game-core/src/gateway.js` — add optional `staticDir`; when set, the
+   existing HTTP handler serves files from `dist/` (with index + 404.html
+   fallback, path-traversal guard) after the `/admin`, `/stats`, `/api/*` routes.
+2. `bin/dev-server.js` — pass `staticDir` only in production (`NODE_ENV=production`)
+   or when `STATIC_DIR` is set, so dev (Vite on :5173) is unaffected.
+3. `Dockerfile` — multi-stage: build `dist/`, then run gateway with prod deps only.
+4. `.dockerignore`.
+
+## Tests
+### Unit
+- `npm test` — 250 tests still pass (gateway HTTP routing change only).
+### Manual / integration (done)
+- `NODE_ENV=production node bin/dev-server.js`: `/` and `/games/<id>/` → 200 html,
+  `/favicon.svg` → 200 svg, `/api/leaderboard` → 200 json, unknown → 404 (custom
+  404.html body), traversal → blocked.
+- `docker build` succeeds; container serves `/`, `/favicon.svg`, `/games/fps/`
+  (200) and accepts the WS upgrade (101 Switching Protocols) on the same port.

@@ -26,6 +26,8 @@
 // tested with a fake client (anything with .send()).
 
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import { RoomManager } from './rooms.js';
@@ -62,6 +64,65 @@ const HEARTBEAT = {
 
 const RATE_LIMIT = { capacity: 30, refillRate: 2, refillIntervalMs: 1000 };
 const SNAPSHOT_INTERVAL_MS = 60_000;
+
+const CONTENT_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.map': 'application/json; charset=utf-8',
+};
+
+// Serve a file from the built client (dist/). Resolves the request path inside
+// staticDir, rejecting any traversal that escapes the root. A request for a
+// directory serves its index.html. Unmatched paths fall back to the 404.html
+// the build copied from /public. Returns true if it sent a response.
+function serveStatic(staticDir, pathname, res) {
+  const rel = decodeURIComponent(pathname).replace(/^\/+/, '');
+  const resolved = path.resolve(staticDir, rel);
+  if (resolved !== staticDir && !resolved.startsWith(staticDir + path.sep)) {
+    res.statusCode = 403;
+    res.end('forbidden');
+    return true;
+  }
+
+  let filePath = resolved;
+  let stat = null;
+  try {
+    stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      filePath = path.join(filePath, 'index.html');
+      stat = fs.statSync(filePath);
+    }
+  } catch {
+    stat = null;
+  }
+
+  if (!stat) {
+    const notFound = path.join(staticDir, '404.html');
+    res.statusCode = 404;
+    if (fs.existsSync(notFound)) {
+      res.setHeader('Content-Type', CONTENT_TYPES['.html']);
+      res.end(fs.readFileSync(notFound));
+    } else {
+      res.end('not found');
+    }
+    return true;
+  }
+
+  res.setHeader('Content-Type', CONTENT_TYPES[path.extname(filePath)] ?? 'application/octet-stream');
+  res.end(fs.readFileSync(filePath));
+  return true;
+}
 
 const ADMIN_HTML = `<!DOCTYPE html><html><head><title>Game Admin</title><meta charset="utf-8">
 <style>body{font-family:monospace;padding:1rem}table{border-collapse:collapse;width:100%}
@@ -273,8 +334,10 @@ export function createGateway({
   outcomesPath = './outcomes.json',
   achievementsPath = './achievements.json',
   snapshotsPath = './snapshots',
+  staticDir = null,
   manager,
 } = {}) {
+  const resolvedStaticDir = staticDir ? path.resolve(staticDir) : null;
   const outcomeStore = new OutcomeStore(outcomesPath);
   const achievementStore = new AchievementStore(achievementsPath);
 
@@ -391,9 +454,9 @@ export function createGateway({
       return;
     }
 
-    res.setHeader('Content-Type', 'application/json');
     const records = outcomeStore.all();
     if (url.pathname === '/api/leaderboard') {
+      res.setHeader('Content-Type', 'application/json');
       const entries = computeBoard(records, {
         gameId: url.searchParams.get('gameId') || undefined,
         roomCode: url.searchParams.get('roomCode') || undefined,
@@ -401,16 +464,21 @@ export function createGateway({
       });
       res.end(JSON.stringify({ entries }));
     } else if (url.pathname === '/api/history') {
+      res.setHeader('Content-Type', 'application/json');
       const playerId = url.searchParams.get('playerId');
       res.end(JSON.stringify({ games: matchHistory(records, playerId) }));
     } else if (url.pathname === '/api/h2h') {
+      res.setHeader('Content-Type', 'application/json');
       const stats = headToHead(
         records,
         url.searchParams.get('playerA'),
         url.searchParams.get('playerB'),
       );
       res.end(JSON.stringify(stats));
+    } else if (resolvedStaticDir) {
+      serveStatic(resolvedStaticDir, url.pathname, res);
     } else {
+      res.setHeader('Content-Type', 'application/json');
       res.statusCode = 404;
       res.end(JSON.stringify({ error: 'not found' }));
     }
@@ -420,6 +488,7 @@ export function createGateway({
   const wss = new WebSocketServer({ server: httpServer });
   httpServer.listen(port);
   console.log(`Game gateway listening on :${port}`);
+  if (resolvedStaticDir) console.log(`Serving static client from ${resolvedStaticDir}`);
 
   wss.on('connection', (ws, req) => {
     const params = new URL(req.url, 'http://localhost').searchParams;
