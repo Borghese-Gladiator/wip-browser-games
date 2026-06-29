@@ -82,3 +82,24 @@ This isolates the only real per-game differences (message names, start fn) while
 - Repeat join-by-code flow for Sheng Ji on the same gateway (proves gameId routing).
 - Portal still lists all games; tic-tac-toe still works locally.
 ```
+
+---
+
+# Plan: Deploy-readiness polish pass
+
+## Brief
+Fix one correctness blocker and add baseline polish so the repo is closer to deployable.
+
+## Changes
+1. **Blocker:** declare `@browser-games/engine-reversi` in `packages/game-core/package.json` deps (imported in `src/games.js:33` but undeclared).
+2. **Favicon:** add `/public/favicon.svg` served from project root by Vite to all multi-page entries.
+3. **Meta + favicon links:** add `<link rel="icon">`, description, theme-color to all 6 `index.html` files (portal + 5 games).
+4. **LICENSE:** add MIT LICENSE at repo root.
+5. **Custom 404:** add `/public/404.html` for static hosts.
+
+## Tests
+### Unit
+- `npm test` — 250 tests still pass (no game logic touched).
+### Manual (browser)
+- `npm run build` succeeds; `dist/favicon.svg` present and referenced.
+- `npm run preview`; load portal + each game, confirm favicon in tab, titles unchanged.
