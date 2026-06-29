@@ -45,4 +45,13 @@ export const games = [
     multiplayer: true,
     enabled: true,
   },
+  {
+    id: "reversi",
+    title: "Reversi",
+    description: "2-player strategy. Flip your opponent's pieces to claim the board. Most pieces wins.",
+    emoji: "⚫",
+    path: "/games/reversi/",
+    multiplayer: true,
+    enabled: true,
+  },
 ];

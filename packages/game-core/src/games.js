@@ -30,6 +30,7 @@
 
 import * as poker from '@browser-games/engine-poker';
 import * as shengJi from '@browser-games/engine-sheng-ji';
+import * as reversi from '@browser-games/engine-reversi';
 
 // True exactly once: when newRecord is the player's first recorded rank-1 finish.
 const isFirstWin = (playerId, _newRecord, playerRecords) =>
@@ -144,6 +145,51 @@ const shengJiAdapter = {
   achievements: [{ id: 'shengji-first-win', name: 'Team Player', predicate: isFirstWin }],
 };
 
+const reversiAdapter = {
+  id: 'reversi',
+  engine: reversi,
+  engineVersion: '1.0.0',
+  enabled: true,
+  validGameMessages: [{ row: 'number', col: 'number' }, { restart: 'boolean' }],
+  anticheat: (state, playerId, msg) => {
+    if (msg.row !== undefined) {
+      const player = state.players.find((p) => p.id === playerId);
+      if (!player || player.seat !== state.activeSeat) return 'action out of turn';
+    }
+    return null;
+  },
+  minPlayers: 2,
+  maxPlayers: 2,
+  autoStart: (state) => (state.players.length === 2 ? reversi.startGame(state) : null),
+  onMessage: (state, playerId, msg) => {
+    if (msg.restart) return reversi.startGame(state);
+    if (msg.row !== undefined) return reversi.applyMove(state, playerId, msg);
+    throw new Error('unknown reversi message');
+  },
+  activeSeat: (state) => state.activeSeat,
+  timeoutAction: (state, seat) => {
+    const moves = reversi.legalMoves(state, seat);
+    return moves.length > 0 ? { row: moves[0].row, col: moves[0].col } : null;
+  },
+  botMove: (state, seat) => {
+    const moves = reversi.legalMoves(state, seat);
+    return moves.length > 0 ? { row: moves[0].row, col: moves[0].col } : null;
+  },
+  getOutcome: (state) => {
+    if (state.phase !== 'done') return null;
+    const { B, W } = state.score;
+    return {
+      outcomes: state.players.map((p) => ({
+        playerId: p.id,
+        rank: state.winner === 'draw' ? 1 : (p.color === state.winner ? 1 : 2),
+        score: p.color === 'B' ? B : W,
+        meta: { color: p.color, score: state.score, winner: state.winner },
+      })),
+    };
+  },
+  achievements: [{ id: 'reversi-first-win', name: 'First Win', predicate: isFirstWin }],
+};
+
 // Disabled fixture adapter, never listed in the portal registry. It exists only
 // so the disabled-game rejection path has something to exercise.
 const infraTestAdapter = {
@@ -159,5 +205,6 @@ const infraTestAdapter = {
 export const adapters = {
   poker: pokerAdapter,
   'sheng-ji': shengJiAdapter,
+  reversi: reversiAdapter,
   '_infra-test': infraTestAdapter,
 };

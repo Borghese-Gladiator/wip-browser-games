@@ -24,6 +24,10 @@ export default defineConfig({
         __dirname,
         "packages/engines/sheng-ji/src/engine.js",
       ),
+      "@browser-games/engine-reversi": resolve(
+        __dirname,
+        "packages/engines/reversi/src/engine.js",
+      ),
       "@portal/shared/version": resolve(__dirname, "packages/shared/src/version.js"),
       "@portal/shared/validate": resolve(__dirname, "packages/shared/src/validate.js"),
       "@portal/shared/rateLimit": resolve(__dirname, "packages/shared/src/rateLimit.js"),
