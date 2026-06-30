@@ -1,10 +1,8 @@
-# Browser Games
+# Browser Games Platform
 
-A small gaming portal: a landing page that lists games, with each game living in
-its own page. Built as an npm-workspaces monorepo using Vite + React. Multiplayer
-games share a single WebSocket gateway with a built-in lobby.
+A browser-based gaming platform that hosts both single-player and multiplayer games. Built as an npm-workspaces monorepo using Vite + React. Multiplayer games share a single WebSocket gateway with a built-in lobby.
 
-## Layout
+## Project Structure
 
 ```
 .
@@ -12,6 +10,7 @@ games share a single WebSocket gateway with a built-in lobby.
 ├── vite.config.js          # Multi-page build; inputs derived from the registry
 ├── package.json            # Workspaces root + scripts
 ├── bin/
+│   ├── dev-all.js          # Starts all services (gateway + dev server)
 │   └── dev-server.js       # Boots the multiplayer gateway (one process, all games)
 ├── packages/
 │   ├── shared/             # @portal/shared — registry (source of truth) + theme
@@ -26,7 +25,9 @@ games share a single WebSocket gateway with a built-in lobby.
 │   │       └── Lobby.jsx         # Shared create/join-room UI
 │   └── engines/            # Pure, transport-free game engines
 │       ├── poker/          # @browser-games/engine-poker
-│       └── sheng-ji/       # @browser-games/engine-sheng-ji
+│       ├── sheng-ji/       # @browser-games/engine-sheng-ji
+│       ├── fps/            # @browser-games/engine-fps
+│       └── reversi/        # @browser-games/engine-reversi
 ├── portal/                 # @portal/app — the landing page (React)
 └── games/
     ├── tic-tac-toe/        # Local game (no server)
@@ -34,16 +35,47 @@ games share a single WebSocket gateway with a built-in lobby.
     └── sheng-ji/           # Multiplayer — uses game-client + gateway
 ```
 
-## Install
+## Architecture Diagram
+
+```mermaid
+graph TD
+    A[Client/UI] --> B{Gateway}
+    B --> C[Room Manager]
+    B --> D[Game Engines]
+    D --> E[@browser-games/engine-poker]
+    D --> F[@browser-games/engine-sheng-ji]
+    D --> G[@browser-games/engine-fps]
+    D --> H[@browser-games/engine-reversi]
+    C --> I[Engine Adapter]
+    I --> E
+    I --> F
+    I --> G
+    I --> H
+    B --> J[Shared Registry]
+    J --> K[@portal/shared/registry.js]
+    
+    style A fill:#e1f5fe
+    style B fill:#f3e5f5
+    style C fill:#fff3e0
+    style D fill:#e8f5e9
+    style E fill:#c8e6c9
+    style F fill:#c8e6c9
+    style G fill:#c8e6c9
+    style H fill:#c8e6c9
+    style I fill:#e1f5fe
+    style J fill:#fce4ec
+    style K fill:#f8bbd0
+```
+
+## Running Locally
+
+Start all services in development mode:
 
 ```
-npm install
+npm run dev-all
 ```
 
-## Run (dev)
-
-Multiplayer games need the gateway running alongside the Vite dev server (two
-terminals):
+Or start them separately in different terminals:
 
 ```
 npm run server   # multiplayer gateway on :3001
@@ -53,21 +85,21 @@ npm run dev      # portal + games on :5173
 Open the Vite URL for the portal; click a game card to navigate to it.
 Tic-Tac-Toe is local and needs only `npm run dev`.
 
-## Build / preview (prod)
+## Building & Previewing
 
 ```
 npm run build
 npm run preview
 ```
 
-## Test
+## Testing
 
 ```
 npm test           # unit tests (engines, rooms, gateway, pure logic)
 npm run test:e2e   # Playwright; boots the gateway + Vite, plays full games
 ```
 
-## Adding a game
+## Adding a Game
 
 The registry (`packages/shared/src/registry.js`) is the single source of truth —
 the portal grid and the Vite multi-page `input` map both derive from it.
